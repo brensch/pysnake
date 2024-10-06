@@ -19,7 +19,7 @@ def create_model(board_height, board_width, num_snakes, num_actions):
     Creates a neural network model that takes the game state as input
     and outputs policy logits for each snake and a value estimate.
     """
-    input_shape = (board_height, board_width, num_snakes + 1)  # +1 for the food layer
+    input_shape = (board_height, board_width, num_snakes * 2 + 1)  # 2 channels per snake + 1 for the food layer
     inputs = keras.Input(shape=input_shape)
 
     x = layers.Conv2D(64, 3, padding='same', activation='relu')(inputs)
@@ -86,6 +86,7 @@ def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
     return total_loss.numpy(), policy_loss.numpy(), value_loss.numpy()
 
 
+
 def self_play(model, num_games, num_simulations, num_snakes):
     replay_buffer = ReplayBuffer()
     for game in range(num_games):
@@ -143,12 +144,14 @@ def self_play(model, num_games, num_simulations, num_snakes):
             game_values.append(value)
 
             # Check if the game is over
-            if game_state.num_snakes == 0 or all(len(body) == 0 for body in game_state.snake_bodies):
+            if not any(game_state.alive_snakes):
                 game_over = True
                 rewards = [-1] * num_snakes  # All snakes lost
-            elif game_state.num_snakes == 1:
+            elif sum(game_state.alive_snakes) == 1:
                 game_over = True
-                rewards = [1 if i == 0 else -1 for i in range(num_snakes)]  # Snake 0 wins
+                winning_snake = np.argmax(game_state.alive_snakes)
+                rewards = [-1] * num_snakes
+                rewards[winning_snake] = 1  # Winning snake gets +1 reward
             else:
                 rewards = [0] * num_snakes  # Game continues
 

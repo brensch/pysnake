@@ -1,7 +1,10 @@
+# game_state.py
+
 import numpy as np
+from typing import List, Tuple
 
 class GameState:
-    def __init__(self, board_size: tuple, snake_bodies: list, food_positions: np.ndarray):
+    def __init__(self, board_size: Tuple[int, int], snake_bodies: List[np.ndarray], food_positions: List[np.ndarray]):
         self.board_size = board_size
         self.num_snakes = len(snake_bodies)
         self.snake_layers = np.zeros((self.num_snakes, board_size[1], board_size[0]), dtype=int)  # One layer per snake
@@ -148,16 +151,14 @@ class GameState:
         self.snake_layers = np.zeros((self.num_snakes, self.board_size[1], self.board_size[0]), dtype=int)
 
         # Re-initialize snake layers with updated bodies
-        for i, body in enumerate(self.snake_bodies):
-            length = len(body)
-            for j, segment in enumerate(body):
-                self.snake_layers[i, segment[1], segment[0]] = length - j
+        self.initialize_snakes()
 
     def get_state_as_tensor(self) -> np.ndarray:
         """ Returns the game state as a stacked NumPy array suitable for input into TensorFlow. """
         # Stack all snake layers along with the food layer to create a multi-channel tensor
-        state_tensor = np.stack([*self.snake_layers, self.food_layer])
+        state_tensor = np.stack([*self.snake_layers, self.food_layer], axis=-1)
         return state_tensor
+
 
     def visualize_board_ascii(self):
         """ 

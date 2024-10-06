@@ -98,25 +98,25 @@ def self_play(model, num_games, num_simulations, num_snakes):
         # Initialize GameState
         board_size = (11, 11)
         snake_bodies = []
-        for i in range(num_snakes):
-            # Place snakes at different starting positions
-            # For simplicity, place snakes at corners
-            if i == 0:
-                snake_bodies.append(np.array([[5, 5], [5, 4], [5, 3]]))  # Center
-            elif i == 1:
-                snake_bodies.append(np.array([[0, 0], [0, 1], [0, 2]]))  # Top-left corner
-            elif i == 2:
-                snake_bodies.append(np.array([[10, 10], [10, 9], [10, 8]]))  # Bottom-right corner
-            elif i == 3:
-                snake_bodies.append(np.array([[0, 10], [1, 10], [2, 10]]))  # Bottom-left corner
+        food_positions = []
 
-        # Place food in the middle and near the snakes
-        food_positions = [
-            np.array([5, 5]),  # Center
-            np.array([2, 2]),  # Near top-left corner
-            np.array([8, 8]),  # Near bottom-right corner
-            np.array([2, 8])   # Near bottom-left corner
-        ]
+        # Generate starting positions and orientations
+        positions, orientations = generate_snake_start_positions(num_snakes, board_size)
+
+        # Create snake bodies with segments stacked at the starting position
+        for pos, orientation in zip(positions, orientations):
+            body_length = 3  # Initial length of the snake
+            body = np.array([pos for _ in range(body_length)])
+            snake_bodies.append(body)
+
+            # Place food near each snake within two squares
+            food_x = (pos[0] + 2 * orientation[0]) % board_size[0]
+            food_y = (pos[1] + 2 * orientation[1]) % board_size[1]
+            food_positions.append(np.array([food_x, food_y]))
+
+        # Place additional food in the center
+        center_food = np.array([board_size[0] // 2, board_size[1] // 2])
+        food_positions.append(center_food)
 
         game_state = GameState(board_size, snake_bodies, food_positions)
 
@@ -125,10 +125,12 @@ def self_play(model, num_games, num_simulations, num_snakes):
             root = MCTSNode(copy.deepcopy(game_state))
             best_joint_action_indices = mcts_search(root, model, num_simulations, num_snakes)
 
-            # Extract individual policies and actions
-            state_tensor = game_state.get_state_as_tensor()
+            # Apply the joint action
+            moves = [ACTIONS[action_idx] for action_idx in best_joint_action_indices]
+            game_state.apply_moves(np.array(moves))
 
-            # Get policy logits and value from the model
+            # Record the state and policy for each snake
+            state_tensor = game_state.get_state_as_tensor()
             outputs = model.predict(np.expand_dims(state_tensor, axis=0))
             policy_logits = outputs[:num_snakes]
             value = outputs[-1][0][0]  # Scalar value
@@ -136,14 +138,9 @@ def self_play(model, num_games, num_simulations, num_snakes):
             # Convert logits to probabilities
             policy_probs = [tf.nn.softmax(logits[0]).numpy() for logits in policy_logits]
 
-            # Record the state and the policy for each snake
             game_states.append(state_tensor)
             game_policies.append(policy_probs)
             game_values.append(value)
-
-            # Apply the joint action
-            moves = [ACTIONS[action_idx] for action_idx in best_joint_action_indices]
-            game_state.apply_moves(np.array(moves))
 
             # Check if the game is over
             if game_state.num_snakes == 0 or all(len(body) == 0 for body in game_state.snake_bodies):
@@ -167,3 +164,26 @@ def self_play(model, num_games, num_simulations, num_snakes):
                 replay_buffer.add(state_tensor, policy_probs_list[i], value_list)
 
     return replay_buffer
+
+
+
+def generate_snake_start_positions(num_snakes, board_size):
+    positions = []
+    orientations = []
+    center = (board_size[0] // 2, board_size[1] // 2)
+    radius_x = board_size[0] // 2 - 1
+    radius_y = board_size[1] // 2 - 1
+
+    for i in range(num_snakes):
+        angle = 2 * np.pi * i / num_snakes
+        x = int(center[0] + radius_x * np.cos(angle))
+        y = int(center[1] + radius_y * np.sin(angle))
+        positions.append((x, y))
+
+        # Orientation towards the center
+        orientation = np.array([np.sign(center[0] - x), np.sign(center[1] - y)])
+        # If the snake is at the center, set a default orientation
+        if orientation[0] == 0 and orientation[1] == 0:
+            orientation = np.array([0, 1])  # Facing up
+        orientations.append(orientation)
+    return positions, orientations

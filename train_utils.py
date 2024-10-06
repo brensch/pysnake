@@ -14,6 +14,19 @@ import matplotlib.pyplot as plt
 from game_state import GameState
 from mcts import MCTSNode, mcts_search, ACTIONS, NUM_ACTIONS
 
+class ReplayBuffer:
+    def __init__(self):
+        self.buffer = deque(maxlen=10000)
+
+    def add(self, state_tensor, target_policy, target_value):
+        self.buffer.append((state_tensor, target_policy, target_value))
+
+    def sample(self, batch_size):
+        actual_batch_size = min(batch_size, len(self.buffer))
+        samples = random.sample(self.buffer, actual_batch_size)
+        state_tensors, target_policies, target_values = zip(*samples)
+        return np.array(state_tensors), list(target_policies), np.array(target_values)
+
 def create_model(board_height, board_width, num_snakes, num_actions):
     """
     Creates a neural network model that takes the game state as input
@@ -39,68 +52,26 @@ def create_model(board_height, board_width, num_snakes, num_actions):
     model = keras.Model(inputs=inputs, outputs=policy_logits + [value])
     return model
 
-class ReplayBuffer:
-    def __init__(self):
-        self.buffer = deque(maxlen=10000)
+def generate_snake_start_positions(num_snakes, board_size):
+    positions = []
+    orientations = []
+    center = (board_size[0] // 2, board_size[1] // 2)
+    radius_x = board_size[0] // 2 - 1
+    radius_y = board_size[1] // 2 - 1
 
-    def add(self, state_tensor, target_policy, target_value):
-        self.buffer.append((state_tensor, target_policy, target_value))
+    for i in range(num_snakes):
+        angle = 2 * np.pi * i / num_snakes
+        x = int(center[0] + radius_x * np.cos(angle))
+        y = int(center[1] + radius_y * np.sin(angle))
+        positions.append((x, y))
 
-    def sample(self, batch_size):
-        actual_batch_size = min(batch_size, len(self.buffer))
-        samples = random.sample(self.buffer, actual_batch_size)
-        state_tensors, target_policies, target_values = zip(*samples)
-        return np.array(state_tensors), list(target_policies), np.array(target_values)
-
-def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
-    state_tensors, target_policies, target_values = replay_buffer.sample(batch_size)
-
-    # Initialize lists for each snake
-    target_policies_per_snake = [[] for _ in range(num_snakes)]
-
-    # Iterate over the batch
-    for idx, policy_list in enumerate(target_policies):
-        for i in range(num_snakes):
-            policy = policy_list[i]
-            # Ensure policy is a NumPy array of shape (NUM_ACTIONS,)
-            policy = np.array(policy, dtype=np.float32).reshape(NUM_ACTIONS)
-            target_policies_per_snake[i].append(policy)
-            # Debugging: Print the shape of each policy
-            if idx == 0 and i == 0:
-                print(f"policy.shape at index {idx} for snake {i}: {policy.shape}")
-
-    # Stack policies for each snake
-    target_policies_stacked = [np.stack(target_policies_per_snake[i], axis=0).astype(np.float32) for i in range(num_snakes)]
-
-    with tf.GradientTape() as tape:
-        outputs = model(state_tensors, training=True)
-        policy_logits_list = outputs[:num_snakes]
-        values = outputs[-1]
-
-        # Compute policy loss for each snake
-        policy_loss = 0
-        print(f"state_tensors.shape: {state_tensors.shape}")
-        for i in range(num_snakes):
-            print(f"policy_logits_list[{i}].shape: {policy_logits_list[i].shape}")
-            print(f"target_policies_stacked[{i}].shape: {target_policies_stacked[i].shape}")
-            # Ensure shapes match
-            logits = policy_logits_list[i]
-            labels = target_policies_stacked[i]
-
-            policy_loss += tf.reduce_mean(
-                tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
-            )
-
-        # Compute value loss
-        value_loss = tf.reduce_mean(tf.square(target_values - tf.squeeze(values)))
-
-        total_loss = policy_loss + value_loss
-
-    gradients = tape.gradient(total_loss, model.trainable_variables)
-    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-
-    return total_loss.numpy(), policy_loss.numpy(), value_loss.numpy()
-
+        # Orientation towards the center
+        orientation = np.array([np.sign(center[0] - x), np.sign(center[1] - y)])
+        # If the snake is at the center, set a default orientation
+        if orientation[0] == 0 and orientation[1] == 0:
+            orientation = np.array([0, 1])  # Facing up
+        orientations.append(orientation)
+    return positions, orientations
 
 def self_play(model, num_games, num_simulations, num_snakes):
     replay_buffer = ReplayBuffer()
@@ -149,7 +120,7 @@ def self_play(model, num_games, num_simulations, num_snakes):
             state_tensor = game_state.get_state_as_tensor()
             game_states.append(state_tensor)
 
-           # Compute target policies based on MCTS visit counts
+            # Compute target policies based on MCTS visit counts
             visit_counts_per_snake = [np.zeros(NUM_ACTIONS) for _ in range(num_snakes)]
             total_visits = 0
 
@@ -160,14 +131,23 @@ def self_play(model, num_games, num_simulations, num_snakes):
                 for i in range(num_snakes):
                     visit_counts_per_snake[i][joint_action[i]] += visit_count
 
+            # Determine alive snakes
+            alive_snakes_indices = [i for i, alive in enumerate(game_state.alive_snakes) if alive]
+
             # Normalize the visit counts to get target policies
             target_policies = []
             for i in range(num_snakes):
-                if total_visits > 0:
-                    target_policy = visit_counts_per_snake[i] / total_visits
+                if i in alive_snakes_indices:
+                    if total_visits > 0:
+                        target_policy = visit_counts_per_snake[i] / total_visits
+                    else:
+                        target_policy = np.ones(NUM_ACTIONS, dtype=np.float32) / NUM_ACTIONS  # Uniform distribution if no visits
                 else:
-                    target_policy = np.ones(NUM_ACTIONS, dtype=np.float32) / NUM_ACTIONS  # Uniform distribution if no visits
-                target_policies.append(target_policy.astype(np.float32))  # Ensure it's a NumPy array
+                    # Snake is dead; set target policy to zeros
+                    target_policy = np.zeros(NUM_ACTIONS, dtype=np.float32)
+                # Ensure target_policy is an array of shape (NUM_ACTIONS,)
+                target_policy = np.array(target_policy, dtype=np.float32).reshape(NUM_ACTIONS)
+                target_policies.append(target_policy)
             game_policies.append(target_policies)
 
             # Get the value from the model for training (optional)
@@ -193,32 +173,52 @@ def self_play(model, num_games, num_simulations, num_snakes):
                 game_values = [rewards[i] for i in range(num_snakes)] * len(game_states)
 
         # Add game data to replay buffer
-        for state_tensor, policy_probs_list, value_list in zip(game_states, game_policies, game_values):
-            # For each snake, add to replay buffer
-            for i in range(num_snakes):
-                replay_buffer.add(state_tensor, policy_probs_list[i], value_list)
+        for state_tensor, target_policies_per_state, value in zip(game_states, game_policies, game_values):
+            replay_buffer.add(state_tensor, target_policies_per_state, value)
 
     return replay_buffer
 
+def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
+    state_tensors, target_policies, target_values = replay_buffer.sample(batch_size)
 
+    # Initialize lists for each snake
+    target_policies_per_snake = [[] for _ in range(num_snakes)]
 
-def generate_snake_start_positions(num_snakes, board_size):
-    positions = []
-    orientations = []
-    center = (board_size[0] // 2, board_size[1] // 2)
-    radius_x = board_size[0] // 2 - 1
-    radius_y = board_size[1] // 2 - 1
+    # Iterate over the batch
+    for idx, policy_list in enumerate(target_policies):
+        for i in range(num_snakes):
+            policy = policy_list[i]
+            # Ensure policy is a NumPy array of shape (NUM_ACTIONS,)
+            policy = np.array(policy, dtype=np.float32).reshape(NUM_ACTIONS)
+            target_policies_per_snake[i].append(policy)
 
-    for i in range(num_snakes):
-        angle = 2 * np.pi * i / num_snakes
-        x = int(center[0] + radius_x * np.cos(angle))
-        y = int(center[1] + radius_y * np.sin(angle))
-        positions.append((x, y))
+    # Stack policies for each snake
+    target_policies_stacked = [np.stack(target_policies_per_snake[i], axis=0).astype(np.float32) for i in range(num_snakes)]
 
-        # Orientation towards the center
-        orientation = np.array([np.sign(center[0] - x), np.sign(center[1] - y)])
-        # If the snake is at the center, set a default orientation
-        if orientation[0] == 0 and orientation[1] == 0:
-            orientation = np.array([0, 1])  # Facing up
-        orientations.append(orientation)
-    return positions, orientations
+    with tf.GradientTape() as tape:
+        outputs = model(state_tensors, training=True)
+        policy_logits_list = outputs[:num_snakes]
+        values = outputs[-1]
+
+        # Compute policy loss for each snake
+        policy_loss = 0
+        for i in range(num_snakes):
+            # Ensure shapes match
+            logits = policy_logits_list[i]
+            labels = target_policies_stacked[i]
+
+            policy_loss += tf.reduce_mean(
+                tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
+            )
+
+        # Compute value loss
+        value_loss = tf.reduce_mean(tf.square(target_values - tf.squeeze(values)))
+
+        total_loss = policy_loss + value_loss
+
+    gradients = tape.gradient(total_loss, model.trainable_variables)
+    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+
+    return total_loss.numpy(), policy_loss.numpy(), value_loss.numpy()
+
+# The main training loop can be included in your script or notebook

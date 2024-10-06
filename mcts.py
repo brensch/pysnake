@@ -90,18 +90,38 @@ def expand_and_evaluate(node, model, num_snakes):
     # Convert logits to probabilities
     policy_probs = [tf.nn.softmax(logits[0]).numpy() for logits in policy_logits]
 
+    # Generate possible actions for alive snakes
+    alive_snakes_indices = [i for i, alive in enumerate(node.state.alive_snakes) if alive]
+    action_indices = []
+    for i in range(num_snakes):
+        if i in alive_snakes_indices:
+            action_indices.append(list(range(NUM_ACTIONS)))
+        else:
+            # Dead snakes have no actions; use a placeholder action (e.g., action 0)
+            action_indices.append([0])
+
     # Generate all possible joint actions (cartesian product)
-    action_indices = [list(range(NUM_ACTIONS)) for _ in range(num_snakes)]
     joint_actions = list(np.array(np.meshgrid(*action_indices)).T.reshape(-1, num_snakes))
 
     for joint_action_indices in joint_actions:
         # Compute joint prior (average of individual priors)
-        priors = [policy_probs[i][action_idx] for i, action_idx in enumerate(joint_action_indices)]
+        priors = []
+        for i, action_idx in enumerate(joint_action_indices):
+            if i in alive_snakes_indices:
+                priors.append(policy_probs[i][action_idx])
+            else:
+                # Dead snakes have no prior
+                priors.append(1.0)
         joint_prior = np.mean(priors)
 
         # Apply joint action to create new state
         new_state = copy.deepcopy(node.state)
-        moves = [ACTIONS[action_idx] for action_idx in joint_action_indices]
+        moves = []
+        for i, action_idx in enumerate(joint_action_indices):
+            if i in alive_snakes_indices:
+                moves.append(ACTIONS[action_idx])
+            else:
+                moves.append(np.array([0, 0]))  # Dead snakes don't move
         new_state.apply_moves(np.array(moves))
         child_node = MCTSNode(new_state, parent=node, action=tuple(joint_action_indices))
         child_node.prior = joint_prior

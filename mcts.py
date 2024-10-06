@@ -4,8 +4,7 @@ import numpy as np
 import tensorflow as tf
 import copy
 
-# Import GameState from your game_state module
-from game_state import GameState  
+from game_state import GameState
 
 # Define ACTIONS and NUM_ACTIONS
 ACTIONS = {
@@ -17,41 +16,44 @@ ACTIONS = {
 NUM_ACTIONS = len(ACTIONS)
 
 class MCTSNode:
-    def __init__(self, state, parent=None):
-        self.state: GameState = state  # GameState object
+    def __init__(self, state, parent=None, action=None):
+        self.state = state  # GameState object
         self.parent = parent
-        self.children = {}  # key: action, value: MCTSNode
+        self.action = action  # The joint action that led to this node
+        self.children = {}  # key: joint action tuple, value: MCTSNode
         self.visit_count = 0
         self.total_value = 0.0
-        self.prior = 0.0  # From neural network policy head
+        self.prior = 0.0  # For multi-agent, can use average of priors
 
     def is_expanded(self):
         return len(self.children) > 0
 
-def mcts_search(root, model, num_simulations):
+def mcts_search(root, model, num_simulations, num_snakes):
     for _ in range(num_simulations):
         node = root
         search_path = [node]
 
         # Selection
         while node.is_expanded():
-            action, node = select_child(node)
+            joint_action, node = select_child(node)
             search_path.append(node)
 
         # Expansion and Evaluation
-        value = expand_and_evaluate(node, model)
+        value = expand_and_evaluate(node, model, num_snakes)
 
         # Backpropagation
         backpropagate(search_path, value)
 
-    # After simulations, select the action with the highest visit count
+    # After simulations, select the joint action with the highest visit count
     max_visits = -1
-    best_action = None
-    for action, child in root.children.items():
+    best_joint_action = None
+    for joint_action, child in root.children.items():
         if child.visit_count > max_visits:
             max_visits = child.visit_count
-            best_action = action
-    return best_action
+            best_joint_action = joint_action
+
+    # Return the actions for each snake
+    return best_joint_action
 
 def select_child(node):
     """
@@ -59,42 +61,51 @@ def select_child(node):
     """
     total_visits = sum(child.visit_count for child in node.children.values())
     best_score = -float('inf')
-    best_action = None
+    best_joint_action = None
     best_child = None
 
-    for action, child in node.children.items():
+    for joint_action, child in node.children.items():
         # UCB formula
         ucb_score = (child.total_value / (child.visit_count + 1e-6)) + \
                     2 * child.prior * np.sqrt(total_visits) / (1 + child.visit_count)
         if ucb_score > best_score:
             best_score = ucb_score
-            best_action = action
+            best_joint_action = joint_action
             best_child = child
 
-    return best_action, best_child
+    return best_joint_action, best_child
 
-def expand_and_evaluate(node, model):
+def expand_and_evaluate(node, model, num_snakes):
     """
-    Expands the node by adding all possible actions and evaluates the state using the neural network.
+    Expands the node by adding all possible joint actions and evaluates the state using the neural network.
     """
     state_tensor = node.state.get_state_as_tensor()
     state_tensor = np.expand_dims(state_tensor, axis=0)  # Add batch dimension
 
-    # Get policy and value from the model
-    policy_logits, value = model.predict(state_tensor)
-    policy_probs = tf.nn.softmax(policy_logits[0]).numpy()
-    value = value[0][0]
+    # Get policy logits and value from the model
+    outputs = model.predict(state_tensor)
+    policy_logits = outputs[:num_snakes]
+    value = outputs[-1][0][0]  # Extract scalar value
 
-    # Expand the node with new children
-    for action_idx, action_prob in enumerate(policy_probs):
-        # Apply action to create new state
+    # Convert logits to probabilities
+    policy_probs = [tf.nn.softmax(logits[0]).numpy() for logits in policy_logits]
+
+    # Generate all possible joint actions (cartesian product)
+    action_indices = [list(range(NUM_ACTIONS)) for _ in range(num_snakes)]
+    joint_actions = list(np.array(np.meshgrid(*action_indices)).T.reshape(-1, num_snakes))
+
+    for joint_action_indices in joint_actions:
+        # Compute joint prior (average of individual priors)
+        priors = [policy_probs[i][action_idx] for i, action_idx in enumerate(joint_action_indices)]
+        joint_prior = np.mean(priors)
+
+        # Apply joint action to create new state
         new_state = copy.deepcopy(node.state)
-        move = np.array([ACTIONS[action_idx]])
-        # For simplicity, assume only one snake (the agent)
-        new_state.apply_moves(move)
-        child_node = MCTSNode(new_state, parent=node)
-        child_node.prior = action_prob
-        node.children[action_idx] = child_node
+        moves = [ACTIONS[action_idx] for action_idx in joint_action_indices]
+        new_state.apply_moves(np.array(moves))
+        child_node = MCTSNode(new_state, parent=node, action=tuple(joint_action_indices))
+        child_node.prior = joint_prior
+        node.children[tuple(joint_action_indices)] = child_node
 
     return value
 
@@ -105,4 +116,4 @@ def backpropagate(search_path, value):
     for node in reversed(search_path):
         node.visit_count += 1
         node.total_value += value
-        value = -value  # For zero-sum games
+        value = -value  # For zero-sum games (assuming symmetric competition)

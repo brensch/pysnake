@@ -59,9 +59,15 @@ def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
     target_policies_per_snake = [[] for _ in range(num_snakes)]
 
     # Iterate over the batch
-    for policy_list in target_policies:
+    for idx, policy_list in enumerate(target_policies):
         for i in range(num_snakes):
-            target_policies_per_snake[i].append(policy_list[i])
+            policy = policy_list[i]
+            # Ensure policy is a NumPy array of shape (NUM_ACTIONS,)
+            policy = np.array(policy, dtype=np.float32).reshape(NUM_ACTIONS)
+            target_policies_per_snake[i].append(policy)
+            # Debugging: Print the shape of each policy
+            if idx == 0 and i == 0:
+                print(f"policy.shape at index {idx} for snake {i}: {policy.shape}")
 
     # Stack policies for each snake
     target_policies_stacked = [np.stack(target_policies_per_snake[i], axis=0).astype(np.float32) for i in range(num_snakes)]
@@ -80,8 +86,6 @@ def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
             # Ensure shapes match
             logits = policy_logits_list[i]
             labels = target_policies_stacked[i]
-            # Optionally, print shapes for debugging
-            # print(f"logits.shape: {logits.shape}, labels.shape: {labels.shape}")
 
             policy_loss += tf.reduce_mean(
                 tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
@@ -96,6 +100,7 @@ def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
     return total_loss.numpy(), policy_loss.numpy(), value_loss.numpy()
+
 
 def self_play(model, num_games, num_simulations, num_snakes):
     replay_buffer = ReplayBuffer()
@@ -144,7 +149,7 @@ def self_play(model, num_games, num_simulations, num_snakes):
             state_tensor = game_state.get_state_as_tensor()
             game_states.append(state_tensor)
 
-            # Compute target policies based on MCTS visit counts
+           # Compute target policies based on MCTS visit counts
             visit_counts_per_snake = [np.zeros(NUM_ACTIONS) for _ in range(num_snakes)]
             total_visits = 0
 
@@ -161,8 +166,8 @@ def self_play(model, num_games, num_simulations, num_snakes):
                 if total_visits > 0:
                     target_policy = visit_counts_per_snake[i] / total_visits
                 else:
-                    target_policy = np.ones(NUM_ACTIONS) / NUM_ACTIONS  # Uniform distribution if no visits
-                target_policies.append(target_policy)
+                    target_policy = np.ones(NUM_ACTIONS, dtype=np.float32) / NUM_ACTIONS  # Uniform distribution if no visits
+                target_policies.append(target_policy.astype(np.float32))  # Ensure it's a NumPy array
             game_policies.append(target_policies)
 
             # Get the value from the model for training (optional)

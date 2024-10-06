@@ -192,3 +192,19 @@ class GameState:
         for row in reversed(combined_grid):
             print(' '.join(row))
         print()
+
+    @classmethod
+    def from_state_tensor(cls, state_tensor: np.ndarray, num_snakes: int):
+        board_size = (state_tensor.shape[0], state_tensor.shape[1])
+
+        # Extract the snake body and health layers from the state tensor
+        snake_bodies = []
+        for i in range(num_snakes):
+            snake_body_layer = state_tensor[..., i * 2]
+            snake_body = np.argwhere(snake_body_layer > 0)
+            snake_bodies.append(snake_body)
+
+        food_positions = np.argwhere(state_tensor[..., -1] == 1)
+        
+        # Initialize GameState with the extracted information
+        return cls(board_size, snake_bodies, food_positions)

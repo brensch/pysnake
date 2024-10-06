@@ -84,7 +84,7 @@ class GameState:
             if body_occupancy[new_head[1], new_head[0]] != -1:
                 # Collision detected
                 self.alive_snakes[i] = False
-                print(f"Snake {i} died by colliding into a body.")
+                # print(f"Snake {i} died by colliding into a body.")
 
         # Check for head-to-head collisions (same position)
         positions = {}
@@ -105,13 +105,13 @@ class GameState:
                     # All snakes have equal length, all die
                     for i in snakes_at_pos:
                         self.alive_snakes[i] = False
-                        print(f"Snake {i} died in a head-to-head collision at {pos} (equal length).")
+                        # print(f"Snake {i} died in a head-to-head collision at {pos} (equal length).")
                 else:
                     # Snakes with shorter length die
                     for j, i in enumerate(snakes_at_pos):
                         if lengths[j] < max_length:
                             self.alive_snakes[i] = False
-                            print(f"Snake {i} died in a head-to-head collision at {pos} (shorter length).")
+                            # print(f"Snake {i} died in a head-to-head collision at {pos} (shorter length).")
 
         # Check for head-on collisions (passing through each other)
         for i in range(self.initial_num_snakes):
@@ -127,14 +127,14 @@ class GameState:
 
                     if length_i > length_j:
                         self.alive_snakes[j] = False
-                        print(f"Snake {j} died in a head-on collision with snake {i} (snake {i} is longer).")
+                        # print(f"Snake {j} died in a head-on collision with snake {i} (snake {i} is longer).")
                     elif length_i < length_j:
                         self.alive_snakes[i] = False
-                        print(f"Snake {i} died in a head-on collision with snake {j} (snake {j} is longer).")
+                        # print(f"Snake {i} died in a head-on collision with snake {j} (snake {j} is longer).")
                     else:
                         self.alive_snakes[i] = False
                         self.alive_snakes[j] = False
-                        print(f"Snake {i} and snake {j} died in a head-on collision (equal length).")
+                        # print(f"Snake {i} and snake {j} died in a head-on collision (equal length).")
 
         # Handle food consumption and update health
         for i in range(self.initial_num_snakes):

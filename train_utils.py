@@ -47,21 +47,24 @@ class ReplayBuffer:
         self.buffer.append((state_tensor, target_policy, target_value))
 
     def sample(self, batch_size):
-        samples = random.sample(self.buffer, batch_size)
+        actual_batch_size = min(batch_size, len(self.buffer))
+        samples = random.sample(self.buffer, actual_batch_size)
         state_tensors, target_policies, target_values = zip(*samples)
-        return np.array(state_tensors), np.array(target_policies), np.array(target_values)
+        return np.array(state_tensors), list(target_policies), np.array(target_values)
 
 def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
     state_tensors, target_policies, target_values = replay_buffer.sample(batch_size)
 
-    # Convert target_policies to list of arrays for each snake
+    # Initialize lists for each snake
     target_policies_per_snake = [[] for _ in range(num_snakes)]
+
+    # Iterate over the batch
     for policy_list in target_policies:
         for i in range(num_snakes):
             target_policies_per_snake[i].append(policy_list[i])
 
     # Stack policies for each snake
-    target_policies_stacked = [np.array(target_policies_per_snake[i]) for i in range(num_snakes)]
+    target_policies_stacked = [np.stack(target_policies_per_snake[i], axis=0).astype(np.float32) for i in range(num_snakes)]
 
     with tf.GradientTape() as tape:
         outputs = model(state_tensors, training=True)
@@ -70,9 +73,18 @@ def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
 
         # Compute policy loss for each snake
         policy_loss = 0
+        print(f"state_tensors.shape: {state_tensors.shape}")
         for i in range(num_snakes):
+            print(f"policy_logits_list[{i}].shape: {policy_logits_list[i].shape}")
+            print(f"target_policies_stacked[{i}].shape: {target_policies_stacked[i].shape}")
+            # Ensure shapes match
+            logits = policy_logits_list[i]
+            labels = target_policies_stacked[i]
+            # Optionally, print shapes for debugging
+            # print(f"logits.shape: {logits.shape}, labels.shape: {labels.shape}")
+
             policy_loss += tf.reduce_mean(
-                tf.nn.softmax_cross_entropy_with_logits(labels=target_policies_stacked[i], logits=policy_logits_list[i])
+                tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
             )
 
         # Compute value loss
@@ -84,8 +96,6 @@ def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
     return total_loss.numpy(), policy_loss.numpy(), value_loss.numpy()
-
-
 
 def self_play(model, num_games, num_simulations, num_snakes):
     replay_buffer = ReplayBuffer()
@@ -130,17 +140,34 @@ def self_play(model, num_games, num_simulations, num_snakes):
             moves = [ACTIONS[action_idx] for action_idx in best_joint_action_indices]
             game_state.apply_moves(np.array(moves))
 
-            # Record the state and policy for each snake
+            # Record the state
             state_tensor = game_state.get_state_as_tensor()
-            outputs = model.predict(np.expand_dims(state_tensor, axis=0))
-            policy_logits = outputs[:num_snakes]
-            value = outputs[-1][0][0]  # Scalar value
-
-            # Convert logits to probabilities
-            policy_probs = [tf.nn.softmax(logits[0]).numpy() for logits in policy_logits]
-
             game_states.append(state_tensor)
-            game_policies.append(policy_probs)
+
+            # Compute target policies based on MCTS visit counts
+            visit_counts_per_snake = [np.zeros(NUM_ACTIONS) for _ in range(num_snakes)]
+            total_visits = 0
+
+            for child in root.children.values():
+                joint_action = child.action  # Tuple of action indices per snake
+                visit_count = child.visit_count
+                total_visits += visit_count
+                for i in range(num_snakes):
+                    visit_counts_per_snake[i][joint_action[i]] += visit_count
+
+            # Normalize the visit counts to get target policies
+            target_policies = []
+            for i in range(num_snakes):
+                if total_visits > 0:
+                    target_policy = visit_counts_per_snake[i] / total_visits
+                else:
+                    target_policy = np.ones(NUM_ACTIONS) / NUM_ACTIONS  # Uniform distribution if no visits
+                target_policies.append(target_policy)
+            game_policies.append(target_policies)
+
+            # Get the value from the model for training (optional)
+            outputs = model.predict(np.expand_dims(state_tensor, axis=0))
+            value = outputs[-1][0][0]  # Scalar value
             game_values.append(value)
 
             # Check if the game is over

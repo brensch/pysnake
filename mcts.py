@@ -16,7 +16,7 @@ class MCTSNode:
         self.children: dict = {}  # key: joint action tuple, value: MCTSNode
         self.visit_count: int = 0
         self.total_value: np.ndarray = np.zeros(state.initial_num_snakes)  # Array per snake
-        self.prior: float = 0.0  # For multi-agent, can use average of priors
+        self.prior: float = 0.0  # For multi-agent, can use product or average of priors
 
     def is_expanded(self) -> bool:
         return len(self.children) > 0
@@ -29,7 +29,7 @@ def mcts_search(root: MCTSNode, model: tf.keras.Model, num_simulations: int, num
 
         # Selection
         while node.is_expanded():
-            joint_action, node = select_child(node)
+            node = select_child(node, num_snakes)
             search_path.append(node)
 
         # Expansion and Evaluation
@@ -55,27 +55,27 @@ def mcts_search(root: MCTSNode, model: tf.keras.Model, num_simulations: int, num
     # Return the actions for each snake and average depth
     return best_joint_action, avg_depth
 
-def select_child(node: MCTSNode) -> Tuple[Tuple[int, ...], MCTSNode]:
-    """Selects the child with the highest UCB score."""
-    total_visits = sum(child.visit_count for child in node.children.values())
+def select_child(node: MCTSNode, num_snakes: int) -> MCTSNode:
+    """Selects the child node with the highest PUCT value."""
+    total_visits = node.visit_count
     best_score = -float('inf')
-    best_joint_action = None
     best_child = None
 
     c_puct = 1.0  # Exploration constant; adjust as needed
 
-    for joint_action, child in node.children.items():
-        # UCB formula adjusted for multi-agent scenario
-        q_value = child.total_value / (child.visit_count + 1e-6)  # Average value per snake
-        u_value = c_puct * child.prior * np.sqrt(total_visits) / (1 + child.visit_count)
-        ucb_score = np.sum(q_value) + u_value  # Sum over all snakes
+    for child in node.children.values():
+        # Compute PUCT score for each snake individually and sum them up
+        q_values = child.total_value / (child.visit_count + 1e-6)  # Avoid division by zero
+        u_values = c_puct * child.prior * np.sqrt(total_visits) / (1 + child.visit_count)
+        # For multi-agent, we can sum the individual PUCT values
+        puct_values = q_values + u_values  # Element-wise addition
+        total_puct = np.sum(puct_values)
 
-        if ucb_score > best_score:
-            best_score = ucb_score
-            best_joint_action = joint_action
+        if total_puct > best_score:
+            best_score = total_puct
             best_child = child
 
-    return best_joint_action, best_child
+    return best_child
 
 def expand_and_evaluate(node: MCTSNode, model: tf.keras.Model, num_snakes: int) -> np.ndarray:
     """Expands the node by adding all possible joint actions and evaluates the state using the neural network."""
@@ -103,15 +103,14 @@ def expand_and_evaluate(node: MCTSNode, model: tf.keras.Model, num_snakes: int) 
     joint_actions = list(np.array(np.meshgrid(*action_indices)).T.reshape(-1, num_snakes))
 
     for joint_action_indices in joint_actions:
-        # Compute joint prior (average of individual priors)
+        # Compute joint prior (e.g., product or average of individual priors)
         priors = []
         for i, action_idx in enumerate(joint_action_indices):
             if i in alive_snakes_indices:
                 priors.append(policy_probs[i][action_idx])
             else:
-                # Dead snakes have no prior
-                priors.append(1.0)
-        joint_prior = np.mean(priors)
+                priors.append(1.0)  # Dead snakes don't contribute to prior
+        joint_prior = np.prod(priors)  # Use product for joint prior
 
         # Apply joint action to create new state
         new_state = copy.deepcopy(node.state)

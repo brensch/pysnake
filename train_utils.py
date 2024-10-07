@@ -282,9 +282,16 @@ def train_model(model: keras.Model, optimizer: keras.optimizers.Optimizer, repla
 
     return total_loss.numpy(), policy_loss.numpy(), value_loss.numpy()
 
+import os
+import time
+import pickle
+import glob
+from typing import Tuple
+from tensorflow import keras
+
 def save_model(model: keras.Model, optimizer: keras.optimizers.Optimizer, iteration: int, num_snakes: int, board_size: Tuple[int, int]) -> None:
     """
-    Save the model with the specified parameters embedded in the filename.
+    Save the model and optimizer with the specified parameters embedded in the filename.
     """
     models_dir = 'models'
     if not os.path.exists(models_dir):
@@ -302,21 +309,19 @@ def save_model(model: keras.Model, optimizer: keras.optimizers.Optimizer, iterat
 
     # Save the model with the unique filename
     model.save(unique_filename)
-    # Save the model
-    model.save(unique_filename)
+
     # Save the optimizer state
     optimizer_weights = optimizer.get_weights()
     optimizer_filename = unique_filename.replace('.keras', '_optimizer.pkl')
     with open(optimizer_filename, 'wb') as f:
         pickle.dump(optimizer_weights, f)
-    print(f"Model and optimizer saved as {unique_filename}")
+
+    print(f"Model and optimizer saved as {unique_filename} and {optimizer_filename}")
 
 def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> Tuple[keras.Model, keras.optimizers.Optimizer]:
     """
-    Load the latest model that matches the specified num_snakes and board_size.
+    Load the latest model and optimizer that match the specified num_snakes and board_size.
     """
-    import glob
-
     models_dir = 'models'
     if not os.path.exists(models_dir):
         os.makedirs(models_dir)
@@ -332,9 +337,8 @@ def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> Tuple[ker
     matching_files = glob.glob(search_pattern)
 
     if not matching_files:
-        print(f"No saved model found with num_snakes={num_snakes} "
-              f"and board_size={board_size}")
-        return None
+        print(f"No saved model found with num_snakes={num_snakes} and board_size={board_size}")
+        return None, None
 
     # Sort the matching files by timestamp (descending order) and get the latest one
     latest_model_file = max(matching_files, key=os.path.getctime)
@@ -342,6 +346,7 @@ def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> Tuple[ker
     # Load the latest matching model
     model = keras.models.load_model(latest_model_file)
     print(f"Loaded model from {latest_model_file}")
+
     # Load the optimizer state
     optimizer = keras.optimizers.Adam(learning_rate=0.001)
     optimizer_filename = latest_model_file.replace('.keras', '_optimizer.pkl')
@@ -352,7 +357,9 @@ def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> Tuple[ker
         print("Optimizer state loaded.")
     else:
         print("No optimizer state found; starting with a new optimizer.")
+    
     return model, optimizer
+
 
 
 def generate_snake_start_positions(num_snakes: int, board_size: Tuple[int, int]) -> Tuple[List[Tuple[int, int]], List[np.ndarray]]:

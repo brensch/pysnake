@@ -9,6 +9,7 @@ import copy
 import time
 from tensorflow.keras.models import load_model
 from concurrent.futures import ProcessPoolExecutor
+import glob
 
 # Import classes and functions
 from game_state import GameState
@@ -252,23 +253,59 @@ def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
 
     return total_loss.numpy(), policy_loss.numpy(), value_loss.numpy()
 
-def save_model(model, iteration):
-    # Generate a unique filename based on the iteration and current timestamp
-    unique_filename = f'model_iteration_{iteration}_{int(time.time())}.keras'
+
+
+
+
+# Ensure the models directory exists
+if not os.path.exists('models'):
+    os.makedirs('models')
+
+def save_model(model, iteration, num_snakes, board_size):
+    """
+    Save the model with the specified parameters embedded in the filename.
+    """
+    # Create the '/models' directory if it doesn't exist
+    models_dir = 'models'
+
+    # Convert the board size to a string format like '11x11'
+    board_size_str = f'{board_size[0]}x{board_size[1]}'
+
+    # Generate a unique filename with the iteration, num_snakes, board_size, and timestamp
+    unique_filename = os.path.join(
+        models_dir,
+        f'model_iteration_{iteration}_snakes_{num_snakes}_board_{board_size_str}_{int(time.time())}.keras'
+    )
     
     # Save the model with the unique filename
     model.save(unique_filename)
     print(f"Model saved as {unique_filename}")
-    
-    # Also save the model as 'latest_model.keras'
-    model.save('latest_model.keras')
-    print("Model also saved as latest_model.keras")
 
-def load_latest_model():
-    try:
-        model = load_model('latest_model.keras')
-        print("Loaded model from latest_model.keras")
-        return model
-    except OSError:
-        print("No saved model found. Starting from scratch.")
+def load_latest_model(num_snakes, board_size):
+    """
+    Load the latest model that matches the specified num_snakes and board_size.
+    """
+    models_dir = 'models'
+
+    # Convert the board size to a string format like '11x11'
+    board_size_str = f'{board_size[0]}x{board_size[1]}'
+
+    # Find all model files that match the specified parameters
+    search_pattern = os.path.join(
+        models_dir,
+        f'model_iteration_*_snakes_{num_snakes}_board_{board_size_str}_*.keras'
+    )
+    matching_files = glob.glob(search_pattern)
+
+    if not matching_files:
+        print(f"No saved model found with num_snakes={num_snakes} and board_size={board_size}")
         return None
+
+    # Sort the matching files by timestamp (descending order) and get the latest one
+    latest_model_file = max(matching_files, key=os.path.getctime)
+
+    # Load the latest matching model
+    model = load_model(latest_model_file)
+    print(f"Loaded model from {latest_model_file}")
+
+    return model

@@ -490,6 +490,7 @@ def play_evaluation_game(current_model: keras.Model, previous_model: keras.Model
         # Apply the joint action
         moves = [ACTIONS[action_idx] for action_idx in action_indices_per_snake]
         game_state.apply_moves(np.array(moves))
+        game_state.visualize_board_ascii()
 
         # Check if the game is over
         if game_state.is_terminal():

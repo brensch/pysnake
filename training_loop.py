@@ -52,7 +52,7 @@ for iteration in range(num_iterations):
         print(f"  Average MCTS Depth: {summary['avg_mcts_depth']:.2f}")
         print(f"  Winner: {'Snake ' + str(summary['winner']) if summary['winner'] is not None else 'Draw'}")
         # Visualize the game
-        visualize_game(summary, num_snakes, (board_height, board_width))
+        # visualize_game(summary, num_snakes, (board_height, board_width))
 
     # Train the model
     num_samples = len(replay_buffer.buffer)

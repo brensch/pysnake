@@ -75,7 +75,7 @@ def self_play(model: keras.Model, num_games: int, num_simulations: int, num_snak
 
 def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, game_index: int) -> Tuple[List[Tuple[np.ndarray, List[np.ndarray], np.ndarray]], Dict]:
     """
-    Plays a single game for self-play.
+    Plays a single game for self-play and prints statistics for each step.
     """
     print(f"Game {game_index} started.")
 
@@ -123,6 +123,14 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
         root = MCTSNode(copy.deepcopy(game_state))
         best_joint_action_indices, avg_mcts_depth = mcts_search(root, model, num_simulations, num_snakes)
         mcts_depths.append(avg_mcts_depth)
+
+        # Print details about the current MCTS node statistics
+        print(f"\nStep {step_count + 1}")
+        print(f"  Total MCTS Simulations: {num_simulations}")
+        print(f"  Total Nodes Visited: {sum(child.visit_count for child in root.children.values())}")
+        print(f"  Average MCTS Depth: {avg_mcts_depth:.2f}")
+        for joint_action, child in root.children.items():
+            print(f"  Action {joint_action}: Visits = {child.visit_count}, Value = {child.total_value / max(child.visit_count, 1):.4f}")
 
         # Apply the joint action
         moves = [ACTIONS[action_idx] for action_idx in best_joint_action_indices]
@@ -207,6 +215,7 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
     print(f"Game {game_index} finished. Steps: {step_count}, Average MCTS Depth: {avg_game_mcts_depth:.2f}")
 
     return game_data, game_summary
+
 
 def train_model(model: keras.Model, optimizer: keras.optimizers.Optimizer, replay_buffer: ReplayBuffer, batch_size: int, num_snakes: int) -> Tuple[float, float, float]:
     state_tensors, target_policies, target_values = replay_buffer.sample(batch_size)

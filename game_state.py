@@ -181,7 +181,7 @@ class GameState:
         return not any(self.alive_snakes) or sum(self.alive_snakes) == 1
 
     def get_safe_actions(self, snake_index: int) -> List[int]:
-        """Get a list of safe actions for the given snake."""
+        """Get a list of safe actions for the given snake, only checking for out-of-bounds moves."""
         safe_actions = []
         if not self.alive_snakes[snake_index]:
             return safe_actions
@@ -189,16 +189,8 @@ class GameState:
         head = self.snake_bodies[snake_index][0]
         for action_idx, move in ACTIONS.items():
             new_head = head + move
-            # Check bounds
-            if not (0 <= new_head[0] < self.board_size[0]) or not (0 <= new_head[1] < self.board_size[1]):
-                continue  # Move is out of bounds
-            collision = False
-            # Check for collisions with any snake body
-            for body in self.snake_bodies:
-                if any((body == new_head).all(axis=1)):
-                    collision = True
-                    break
-            if not collision:
+            # Check bounds only
+            if 0 <= new_head[0] < self.board_size[0] and 0 <= new_head[1] < self.board_size[1]:
                 safe_actions.append(action_idx)
         return safe_actions
 

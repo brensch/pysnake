@@ -118,6 +118,8 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
         # Store the current game state
         game_state_objects.append(copy.deepcopy(game_state))
 
+        print(game_state.visualize_board_ascii())
+
         # Run MCTS to get the best joint action and collect MCTS depth
         root = MCTSNode(copy.deepcopy(game_state))
         best_joint_action_indices, avg_mcts_depth = mcts_search(root, model, num_simulations, num_snakes)

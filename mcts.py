@@ -1,7 +1,9 @@
+# mcts.py
+
 import numpy as np
 import tensorflow as tf
 import copy
-from multiprocessing import current_process
+from typing import Tuple, List
 
 from game_state import GameState
 
@@ -15,22 +17,23 @@ ACTIONS = {
 NUM_ACTIONS = len(ACTIONS)
 
 class MCTSNode:
-    def __init__(self, state, parent=None, action=None):
-        self.state = state  # GameState object
-        self.parent = parent
-        self.action = action  # The joint action that led to this node
-        self.children = {}  # key: joint action tuple, value: MCTSNode
-        self.visit_count = 0
-        self.total_value = 0.0
-        self.prior = 0.0  # For multi-agent, can use average of priors
+    def __init__(self, state: GameState, parent: 'MCTSNode' = None, action: Tuple[int, ...] = None):
+        self.state: GameState = state  # GameState object
+        self.parent: 'MCTSNode' = parent
+        self.action: Tuple[int, ...] = action  # The joint action that led to this node
+        self.children: dict = {}  # key: joint action tuple, value: MCTSNode
+        self.visit_count: int = 0
+        self.total_value: float = 0.0
+        self.prior: float = 0.0  # For multi-agent, can use average of priors
 
-    def is_expanded(self):
+    def is_expanded(self) -> bool:
         return len(self.children) > 0
 
-def mcts_search(root, request_queue, response_queue, num_simulations, num_snakes):
+def mcts_search(root: MCTSNode, model: tf.keras.Model, num_simulations: int, num_snakes: int) -> Tuple[Tuple[int, ...], float]:
+    total_depth: int = 0  # To calculate average depth
     for _ in range(num_simulations):
         node = root
-        search_path = [node]
+        search_path: List[MCTSNode] = [node]
 
         # Selection
         while node.is_expanded():
@@ -38,10 +41,16 @@ def mcts_search(root, request_queue, response_queue, num_simulations, num_snakes
             search_path.append(node)
 
         # Expansion and Evaluation
-        value = expand_and_evaluate(node, request_queue, response_queue, num_snakes)
+        value = expand_and_evaluate(node, model, num_snakes)
 
         # Backpropagation
         backpropagate(search_path, value)
+
+        # Update total depth
+        total_depth += len(search_path)
+
+    # Calculate average depth
+    avg_depth = total_depth / num_simulations if num_simulations > 0 else 0
 
     # After simulations, select the joint action with the highest visit count
     max_visits = -1
@@ -51,13 +60,11 @@ def mcts_search(root, request_queue, response_queue, num_simulations, num_snakes
             max_visits = child.visit_count
             best_joint_action = joint_action
 
-    # Return the actions for each snake
-    return best_joint_action
+    # Return the actions for each snake and average depth
+    return best_joint_action, avg_depth
 
-def select_child(node):
-    """
-    Selects the child with the highest UCB score.
-    """
+def select_child(node: MCTSNode) -> Tuple[Tuple[int, ...], MCTSNode]:
+    """Selects the child with the highest UCB score."""
     total_visits = sum(child.visit_count for child in node.children.values())
     best_score = -float('inf')
     best_joint_action = None
@@ -74,22 +81,11 @@ def select_child(node):
 
     return best_joint_action, best_child
 
-def expand_and_evaluate(node, request_queue, response_queue, num_snakes):
-    """
-    Expands the node by adding all possible joint actions and evaluates the state using the neural network.
-    """
+def expand_and_evaluate(node: MCTSNode, model: tf.keras.Model, num_snakes: int) -> float:
+    """Expands the node by adding all possible joint actions and evaluates the state using the neural network."""
     state_tensor = node.state.get_state_as_tensor()
-    # Send inference request to the inference server
-    idx = current_process().pid  # Use process PID as unique identifier
-    request_queue.put((idx, state_tensor))
-    # Wait for the response
-    while True:
-        resp_idx, outputs = response_queue.get()
-        if resp_idx == idx:
-            break
-        else:
-            # Put back the response if it's not for this process
-            response_queue.put((resp_idx, outputs))
+    # Evaluate the state using the model
+    outputs = model.predict(np.expand_dims(state_tensor, axis=0), verbose=0)
     policy_logits = outputs[:num_snakes]
     value = outputs[-1][0][0]  # Extract scalar value
 
@@ -135,10 +131,8 @@ def expand_and_evaluate(node, request_queue, response_queue, num_snakes):
 
     return value
 
-def backpropagate(search_path, value):
-    """
-    Propagates the evaluation value up the search path.
-    """
+def backpropagate(search_path: List[MCTSNode], value: float) -> None:
+    """Propagates the evaluation value up the search path."""
     for node in reversed(search_path):
         node.visit_count += 1
         node.total_value += value

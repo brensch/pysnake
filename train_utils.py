@@ -1,3 +1,5 @@
+# train_utils.py
+
 import os
 import time
 import numpy as np
@@ -7,7 +9,7 @@ from tensorflow.keras import layers
 import random
 from collections import deque
 import copy
-from multiprocessing import Process, Manager, current_process
+from typing import List, Tuple, Dict
 
 # Import classes and functions
 from game_state import GameState
@@ -15,18 +17,18 @@ from mcts import MCTSNode, mcts_search, ACTIONS, NUM_ACTIONS
 
 class ReplayBuffer:
     def __init__(self):
-        self.buffer = deque(maxlen=10000)
+        self.buffer: deque = deque(maxlen=10000)
 
-    def add(self, state_tensor, target_policy, target_value):
+    def add(self, state_tensor: np.ndarray, target_policy: List[np.ndarray], target_value: float) -> None:
         self.buffer.append((state_tensor, target_policy, target_value))
 
-    def sample(self, batch_size):
+    def sample(self, batch_size: int) -> Tuple[np.ndarray, List[List[np.ndarray]], np.ndarray]:
         actual_batch_size = min(batch_size, len(self.buffer))
         samples = random.sample(self.buffer, actual_batch_size)
         state_tensors, target_policies, target_values = zip(*samples)
         return np.array(state_tensors), list(target_policies), np.array(target_values)
 
-def create_model(board_height, board_width, num_snakes, num_actions):
+def create_model(board_height: int, board_width: int, num_snakes: int, num_actions: int) -> keras.Model:
     """
     Creates a neural network model that takes the game state as input
     and outputs policy logits for each snake and a value estimate.
@@ -51,67 +53,46 @@ def create_model(board_height, board_width, num_snakes, num_actions):
     model = keras.Model(inputs=inputs, outputs=policy_logits + [value])
     return model
 
-def inference_server(request_queue, response_queue, model):
+def self_play(model: keras.Model, num_games: int, num_simulations: int, num_snakes: int) -> Tuple[ReplayBuffer, List[Dict]]:
     """
-    Runs the inference server that listens for inference requests and returns predictions.
+    Generates training data through self-play.
     """
-    import time
-    import sys
+    # Initialize a replay buffer
+    replay_buffer = ReplayBuffer()
+    game_summaries: List[Dict] = []  # To store data for each game
 
-    print(f"Inference server started with PID: {os.getpid()}")
+    for game_index in range(num_games):
+        # Play a single game and collect data
+        game_data, game_summary = self_play_game(model, num_simulations, num_snakes, game_index)
+        game_summaries.append(game_summary)
 
-    # Variables to track inference rate
-    inference_count = 0
-    start_time = time.time()
-    last_update_time = start_time
+        # Add game data to the replay buffer
+        for state_tensor, target_policies_per_state, value in game_data:
+            replay_buffer.add(state_tensor, target_policies_per_state, value)
 
-    while True:
-        item = request_queue.get()
-        if item is None:
-            print("Inference server received shutdown signal.")
-            break  # Exit the server loop
-        idx, state_tensor = item
-        # Perform inference
-        outputs = model.predict(np.expand_dims(state_tensor, axis=0), verbose=0)
-        response_queue.put((idx, outputs))
+    return replay_buffer, game_summaries
 
-        # Update inference count
-        inference_count += 1
-
-        # Check if one second has passed since the last update
-        current_time = time.time()
-        if current_time - last_update_time >= 1.0:
-            # Calculate inferences per second
-            elapsed_time = current_time - start_time
-            inferences_per_second = inference_count / elapsed_time
-
-            # Print the rate, overwriting the previous line
-            print(f"\rInferences per second: {inferences_per_second:.2f}", end='', flush=True)
-
-            # Update last update time
-            last_update_time = current_time
-
-    print("\nInference server shutting down.")
-
-def self_play_game(args):
+def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, game_index: int) -> Tuple[List[Tuple[np.ndarray, List[np.ndarray], float]], Dict]:
     """
-    Plays a single game for self-play. This function runs in a separate process.
+    Plays a single game for self-play.
     """
-    request_queue, response_queue, num_simulations, num_snakes, game_index = args
-
-    # Print game start message
-    print(f"Game {game_index} started. Process PID: {current_process().pid}")
+    print(f"Game {game_index} started.")
 
     # Initialize game-specific variables
-    game_states = []
-    game_policies = []
-    game_values = []
-    game_over = False
+    game_states: List[np.ndarray] = []
+    game_policies: List[List[np.ndarray]] = []
+    game_values: List[float] = []
+    game_moves: List[Tuple[int, ...]] = []  # To store moves for visualization
+    game_state_objects: List[GameState] = []  # To store GameState objects for visualization
+    mcts_depths: List[float] = []  # To store the depth of MCTS trees
+    game_over: bool = False
+    step_count: int = 0
+    winning_snake: int = None
 
     # Initialize GameState
     board_size = (11, 11)
-    snake_bodies = []
-    food_positions = []
+    snake_bodies: List[np.ndarray] = []
+    food_positions: List[np.ndarray] = []
 
     # Generate starting positions and orientations
     positions, orientations = generate_snake_start_positions(num_snakes, board_size)
@@ -134,14 +115,18 @@ def self_play_game(args):
     game_state = GameState(board_size, snake_bodies, food_positions)
 
     while not game_over:
-        # Run MCTS to get the best joint action
+        # Store the current game state
+        game_state_objects.append(copy.deepcopy(game_state))
+
+        # Run MCTS to get the best joint action and collect MCTS depth
         root = MCTSNode(copy.deepcopy(game_state))
-        best_joint_action_indices = mcts_search(root, request_queue, response_queue,
-                                                num_simulations, num_snakes)
+        best_joint_action_indices, avg_mcts_depth = mcts_search(root, model, num_simulations, num_snakes)
+        mcts_depths.append(avg_mcts_depth)
 
         # Apply the joint action
         moves = [ACTIONS[action_idx] for action_idx in best_joint_action_indices]
         game_state.apply_moves(np.array(moves))
+        game_moves.append(best_joint_action_indices)
 
         # Record the state
         state_tensor = game_state.get_state_as_tensor()
@@ -176,18 +161,8 @@ def self_play_game(args):
             target_policies.append(target_policy)
         game_policies.append(target_policies)
 
-        # Send inference request to get the value estimate
-        idx = (current_process().pid, id(game_state))  # Use PID and game_state ID as unique identifier
-        state_tensor = game_state.get_state_as_tensor()
-        request_queue.put((idx, state_tensor))
-        # Wait for the response
-        while True:
-            resp_idx, outputs = response_queue.get()
-            if resp_idx == idx:
-                break
-            else:
-                # Put back the response if it's not for this process
-                response_queue.put((resp_idx, outputs))
+        # Get the value from the model for training
+        outputs = model.predict(np.expand_dims(state_tensor, axis=0), verbose=0)
         value = outputs[-1][0][0]  # Scalar value
         game_values.append(value)
 
@@ -208,8 +183,7 @@ def self_play_game(args):
             # Assuming zero-sum game
             game_values = [rewards[i] for i in range(num_snakes)] * len(game_states)
 
-    # Print game finish message
-    print(f"Game {game_index} finished. Process PID: {current_process().pid}")
+        step_count += 1
 
     # Prepare game data to return
     game_data = []
@@ -218,45 +192,24 @@ def self_play_game(args):
                                                               game_values):
         game_data.append((state_tensor, target_policies_per_state, value))
 
-    return game_data
+    # Calculate average MCTS depth
+    avg_game_mcts_depth = sum(mcts_depths) / len(mcts_depths) if mcts_depths else 0
 
+    # Create game summary
+    game_summary = {
+        'game_index': game_index,
+        'step_count': step_count,
+        'avg_mcts_depth': avg_game_mcts_depth,
+        'moves': game_moves,
+        'game_states': game_state_objects,
+        'winner': winning_snake if game_over else None
+    }
 
-def self_play(model, num_games, num_simulations, num_snakes):
-    """
-    Generates training data through self-play using multiple processes.
-    """
-    # Create a Manager to manage shared objects
-    with Manager() as manager:
-        request_queue = manager.Queue()
-        response_queue = manager.Queue()
+    print(f"Game {game_index} finished. Steps: {step_count}, Average MCTS Depth: {avg_game_mcts_depth:.2f}")
 
-        # Start the inference server in a separate process
-        server_process = Process(target=inference_server,
-                                 args=(request_queue, response_queue, model))
-        server_process.start()
+    return game_data, game_summary
 
-        # Prepare arguments for each game
-        args_list = [(request_queue, response_queue, num_simulations, num_snakes, i)
-                     for i in range(num_games)]
-
-        # Use multiprocessing Pool for parallel execution
-        from multiprocessing import Pool
-        with Pool() as pool:
-            results = pool.map(self_play_game, args_list)
-
-        # Combine results into a single replay buffer
-        replay_buffer = ReplayBuffer()
-        for game_data in results:
-            for state_tensor, target_policies_per_state, value in game_data:
-                replay_buffer.add(state_tensor, target_policies_per_state, value)
-
-        # Send shutdown signal to the inference server
-        request_queue.put(None)
-        server_process.join()
-
-    return replay_buffer
-
-def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
+def train_model(model: keras.Model, optimizer: keras.optimizers.Optimizer, replay_buffer: ReplayBuffer, batch_size: int, num_snakes: int) -> Tuple[float, float, float]:
     state_tensors, target_policies, target_values = replay_buffer.sample(batch_size)
 
     # Initialize lists for each snake
@@ -279,7 +232,7 @@ def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
         values = outputs[-1]
 
         # Compute policy loss for each snake
-        policy_loss = 0
+        policy_loss = 0.0
         for i in range(num_snakes):
             logits = policy_logits_list[i]
             labels = target_policies_stacked[i]
@@ -298,7 +251,7 @@ def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
 
     return total_loss.numpy(), policy_loss.numpy(), value_loss.numpy()
 
-def save_model(model, iteration, num_snakes, board_size):
+def save_model(model: keras.Model, iteration: int, num_snakes: int, board_size: Tuple[int, int]) -> None:
     """
     Save the model with the specified parameters embedded in the filename.
     """
@@ -320,7 +273,7 @@ def save_model(model, iteration, num_snakes, board_size):
     model.save(unique_filename)
     print(f"Model saved as {unique_filename}")
 
-def load_latest_model(num_snakes, board_size):
+def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> keras.Model:
     """
     Load the latest model that matches the specified num_snakes and board_size.
     """
@@ -354,9 +307,9 @@ def load_latest_model(num_snakes, board_size):
 
     return model
 
-def generate_snake_start_positions(num_snakes, board_size):
-    positions = []
-    orientations = []
+def generate_snake_start_positions(num_snakes: int, board_size: Tuple[int, int]) -> Tuple[List[Tuple[int, int]], List[np.ndarray]]:
+    positions: List[Tuple[int, int]] = []
+    orientations: List[np.ndarray] = []
     center = (board_size[0] // 2, board_size[1] // 2)
     radius_x = board_size[0] // 2 - 1
     radius_y = board_size[1] // 2 - 1
@@ -374,3 +327,19 @@ def generate_snake_start_positions(num_snakes, board_size):
             orientation = np.array([0, 1])  # Facing up
         orientations.append(orientation)
     return positions, orientations
+
+def visualize_game(summary: Dict, num_snakes: int, board_size: Tuple[int, int]) -> None:
+    """
+    Visualizes the game moves using ASCII art.
+    """
+    import time
+
+    game_states: List[GameState] = summary['game_states']
+    game_index = summary['game_index']
+
+    print(f"Visualizing Game {game_index}:")
+
+    for step_num, game_state in enumerate(game_states):
+        print(f"Step {step_num + 1}:")
+        game_state.visualize_board_ascii()
+        time.sleep(0.5)  # Pause for half a second between steps

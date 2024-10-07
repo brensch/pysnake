@@ -5,14 +5,14 @@ from typing import List, Tuple
 
 class GameState:
     def __init__(self, board_size: Tuple[int, int], snake_bodies: List[np.ndarray], food_positions: List[np.ndarray]):
-        self.board_size = board_size
-        self.initial_num_snakes = len(snake_bodies)
-        self.snake_layers = np.zeros((self.initial_num_snakes, board_size[1], board_size[0]), dtype=int)  # One layer per snake for body
-        self.snake_health_layers = np.zeros((self.initial_num_snakes, board_size[1], board_size[0]), dtype=float)  # One layer per snake for health
-        self.food_layer = np.zeros(board_size, dtype=int)  # Separate food layer
-        self.snake_bodies = snake_bodies  # List of arrays, each array is the body of a snake (including head and tail)
-        self.snake_health = np.full(self.initial_num_snakes, 100, dtype=int)  # Health for each snake
-        self.alive_snakes = np.array([True] * self.initial_num_snakes, dtype=bool)  # Keep track of alive snakes
+        self.board_size: Tuple[int, int] = board_size
+        self.initial_num_snakes: int = len(snake_bodies)
+        self.snake_layers: np.ndarray = np.zeros((self.initial_num_snakes, board_size[1], board_size[0]), dtype=int)  # One layer per snake for body
+        self.snake_health_layers: np.ndarray = np.zeros((self.initial_num_snakes, board_size[1], board_size[0]), dtype=float)  # One layer per snake for health
+        self.food_layer: np.ndarray = np.zeros(board_size, dtype=int)  # Separate food layer
+        self.snake_bodies: List[np.ndarray] = snake_bodies  # List of arrays, each array is the body of a snake (including head and tail)
+        self.snake_health: np.ndarray = np.full(self.initial_num_snakes, 100, dtype=int)  # Health for each snake
+        self.alive_snakes: np.ndarray = np.array([True] * self.initial_num_snakes, dtype=bool)  # Keep track of alive snakes
 
         # Initialize snakes
         self.initialize_snakes()
@@ -21,8 +21,8 @@ class GameState:
         for food in food_positions:
             self.food_layer[food[1], food[0]] = 1  # Food is marked as 1
 
-    def initialize_snakes(self):
-        """ Initialize the layers with snakes represented as countdowns from head to tail and health. """
+    def initialize_snakes(self) -> None:
+        """Initialize the layers with snakes represented as countdowns from head to tail and health."""
         self.snake_layers.fill(0)  # Reset snake body layers
         self.snake_health_layers.fill(0)  # Reset snake health layers
         for i, body in enumerate(self.snake_bodies):
@@ -33,17 +33,17 @@ class GameState:
                 self.snake_layers[i, segment[1], segment[0]] = length - j  # Countdown from head (max) to tail (1)
                 self.snake_health_layers[i, segment[1], segment[0]] = self.snake_health[i] / 100.0  # Normalize health to [0,1]
 
-    def apply_moves(self, snake_moves: np.ndarray):
-        """ Apply moves to all snakes, update health, and handle collisions. """
+    def apply_moves(self, snake_moves: np.ndarray) -> None:
+        """Apply moves to all snakes, update health, and handle collisions."""
         # Decrease health by 1
         self.snake_health[self.alive_snakes] -= 1
 
         # Snakes that are alive and have health > 0
         self.alive_snakes = self.alive_snakes & (self.snake_health > 0)
 
-        new_heads = [None] * self.initial_num_snakes
-        old_heads = [None] * self.initial_num_snakes
-        new_bodies = [None] * self.initial_num_snakes
+        new_heads: List[np.ndarray] = [None] * self.initial_num_snakes
+        old_heads: List[np.ndarray] = [None] * self.initial_num_snakes
+        new_bodies: List[np.ndarray] = [None] * self.initial_num_snakes
 
         # Decrease all positive values on the snake layers (snake body countdown)
         self.snake_layers[self.snake_layers > 0] -= 1
@@ -84,7 +84,6 @@ class GameState:
             if body_occupancy[new_head[1], new_head[0]] != -1:
                 # Collision detected
                 self.alive_snakes[i] = False
-                # print(f"Snake {i} died by colliding into a body.")
 
         # Check for head-to-head collisions (same position)
         positions = {}
@@ -105,13 +104,11 @@ class GameState:
                     # All snakes have equal length, all die
                     for i in snakes_at_pos:
                         self.alive_snakes[i] = False
-                        # print(f"Snake {i} died in a head-to-head collision at {pos} (equal length).")
                 else:
                     # Snakes with shorter length die
                     for j, i in enumerate(snakes_at_pos):
                         if lengths[j] < max_length:
                             self.alive_snakes[i] = False
-                            # print(f"Snake {i} died in a head-to-head collision at {pos} (shorter length).")
 
         # Check for head-on collisions (passing through each other)
         for i in range(self.initial_num_snakes):
@@ -127,14 +124,11 @@ class GameState:
 
                     if length_i > length_j:
                         self.alive_snakes[j] = False
-                        # print(f"Snake {j} died in a head-on collision with snake {i} (snake {i} is longer).")
                     elif length_i < length_j:
                         self.alive_snakes[i] = False
-                        # print(f"Snake {i} died in a head-on collision with snake {j} (snake {j} is longer).")
                     else:
                         self.alive_snakes[i] = False
                         self.alive_snakes[j] = False
-                        # print(f"Snake {i} and snake {j} died in a head-on collision (equal length).")
 
         # Handle food consumption and update health
         for i in range(self.initial_num_snakes):
@@ -143,7 +137,7 @@ class GameState:
             new_head = new_heads[i]
             if self.food_layer[new_head[1], new_head[0]] == 1:
                 # Snake eats food, grow the body
-                tail = new_bodies[i][-1]
+                tail = self.snake_bodies[i][-1]
                 new_bodies[i] = np.vstack((new_bodies[i], [tail]))  # Extend the body
                 self.food_layer[new_head[1], new_head[0]] = 0  # Remove the food
                 self.snake_health[i] = 100  # Reset health to 100
@@ -155,7 +149,7 @@ class GameState:
         self.initialize_snakes()
 
     def get_state_as_tensor(self) -> np.ndarray:
-        """ Returns the game state as a stacked NumPy array suitable for input into TensorFlow. """
+        """Returns the game state as a stacked NumPy array suitable for input into TensorFlow."""
         # Stack all snake body layers, snake health layers, and the food layer to create a multi-channel tensor
         layers = []
         for i in range(self.initial_num_snakes):
@@ -166,10 +160,8 @@ class GameState:
         state_tensor = np.stack(layers, axis=-1)
         return state_tensor
 
-    def visualize_board_ascii(self):
-        """ 
-        Visualizes the current board state by combining snake layers and food into a single ASCII grid.
-        """
+    def visualize_board_ascii(self) -> None:
+        """Visualizes the current board state by combining snake layers and food into a single ASCII grid."""
         combined_grid = np.full(self.board_size, '.', dtype=str)
 
         # Combine snakes and food layers
@@ -194,8 +186,9 @@ class GameState:
         print()
 
     @classmethod
-    def from_state_tensor(cls, state_tensor: np.ndarray, num_snakes: int):
-        board_size = (state_tensor.shape[0], state_tensor.shape[1])
+    def from_state_tensor(cls, state_tensor: np.ndarray, num_snakes: int) -> 'GameState':
+        """Creates a GameState instance from a state tensor."""
+        board_size = (state_tensor.shape[1], state_tensor.shape[0])
 
         # Extract the snake body and health layers from the state tensor
         snake_bodies = []
@@ -205,6 +198,6 @@ class GameState:
             snake_bodies.append(snake_body)
 
         food_positions = np.argwhere(state_tensor[..., -1] == 1)
-        
+
         # Initialize GameState with the extracted information
         return cls(board_size, snake_bodies, food_positions)

@@ -1,5 +1,4 @@
-# train_utils.py
-
+import os
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
@@ -8,8 +7,8 @@ import random
 from collections import deque
 import copy
 import time
-import matplotlib.pyplot as plt
 from tensorflow.keras.models import load_model
+from concurrent.futures import ProcessPoolExecutor
 
 # Import classes and functions
 from game_state import GameState
@@ -75,109 +74,142 @@ def generate_snake_start_positions(num_snakes, board_size):
     return positions, orientations
 
 def self_play(model, num_games, num_simulations, num_snakes):
+    """
+    Generates training data through self-play using multiple processes.
+    """
+    # Save the current model to a temporary file
+    temp_model_file = 'temp_model.keras'
+    model.save(temp_model_file)
+
+    # Prepare arguments for each game
+    args_list = [(temp_model_file, num_simulations, num_snakes, i) for i in range(num_games)]
+
+    # Use ProcessPoolExecutor for parallel execution
+    with ProcessPoolExecutor() as executor:
+        # Map the self_play_game function to the arguments
+        results = list(executor.map(self_play_game, args_list))
+
+    # Combine results into a single replay buffer
     replay_buffer = ReplayBuffer()
-    for game in range(num_games):
-        print(f"Starting game {game + 1}/{num_games}")
-        game_states = []
-        game_policies = []
-        game_values = []
-        game_over = False
-
-        # Initialize GameState
-        board_size = (11, 11)
-        snake_bodies = []
-        food_positions = []
-
-        # Generate starting positions and orientations
-        positions, orientations = generate_snake_start_positions(num_snakes, board_size)
-
-        # Create snake bodies with segments stacked at the starting position
-        for pos, orientation in zip(positions, orientations):
-            body_length = 3  # Initial length of the snake
-            body = np.array([pos for _ in range(body_length)])
-            snake_bodies.append(body)
-
-            # Place food near each snake within two squares
-            food_x = (pos[0] + 2 * orientation[0]) % board_size[0]
-            food_y = (pos[1] + 2 * orientation[1]) % board_size[1]
-            food_positions.append(np.array([food_x, food_y]))
-
-        # Place additional food in the center
-        center_food = np.array([board_size[0] // 2, board_size[1] // 2])
-        food_positions.append(center_food)
-
-        game_state = GameState(board_size, snake_bodies, food_positions)
-
-        while not game_over:
-            # Run MCTS to get the best joint action
-            root = MCTSNode(copy.deepcopy(game_state))
-            best_joint_action_indices = mcts_search(root, model, num_simulations, num_snakes)
-
-            # Apply the joint action
-            moves = [ACTIONS[action_idx] for action_idx in best_joint_action_indices]
-            game_state.apply_moves(np.array(moves))
-
-            # Record the state
-            state_tensor = game_state.get_state_as_tensor()
-            game_states.append(state_tensor)
-
-            # Compute target policies based on MCTS visit counts
-            visit_counts_per_snake = [np.zeros(NUM_ACTIONS) for _ in range(num_snakes)]
-            total_visits = 0
-
-            for child in root.children.values():
-                joint_action = child.action  # Tuple of action indices per snake
-                visit_count = child.visit_count
-                total_visits += visit_count
-                for i in range(num_snakes):
-                    visit_counts_per_snake[i][joint_action[i]] += visit_count
-
-            # Determine alive snakes
-            alive_snakes_indices = [i for i, alive in enumerate(game_state.alive_snakes) if alive]
-
-            # Normalize the visit counts to get target policies
-            target_policies = []
-            for i in range(num_snakes):
-                if i in alive_snakes_indices:
-                    if total_visits > 0:
-                        target_policy = visit_counts_per_snake[i] / total_visits
-                    else:
-                        target_policy = np.ones(NUM_ACTIONS, dtype=np.float32) / NUM_ACTIONS  # Uniform distribution if no visits
-                else:
-                    # Snake is dead; set target policy to zeros
-                    target_policy = np.zeros(NUM_ACTIONS, dtype=np.float32)
-                # Ensure target_policy is an array of shape (NUM_ACTIONS,)
-                target_policy = np.array(target_policy, dtype=np.float32).reshape(NUM_ACTIONS)
-                target_policies.append(target_policy)
-            game_policies.append(target_policies)
-
-            # Get the value from the model for training (optional)
-            outputs = model.predict(np.expand_dims(state_tensor, axis=0))
-            value = outputs[-1][0][0]  # Scalar value
-            game_values.append(value)
-
-            # Check if the game is over
-            if not any(game_state.alive_snakes):
-                game_over = True
-                rewards = [-1] * num_snakes  # All snakes lost
-            elif sum(game_state.alive_snakes) == 1:
-                game_over = True
-                winning_snake = np.argmax(game_state.alive_snakes)
-                rewards = [-1] * num_snakes
-                rewards[winning_snake] = 1  # Winning snake gets +1 reward
-            else:
-                rewards = [0] * num_snakes  # Game continues
-
-            # Backfill rewards if game over
-            if game_over:
-                # Assuming zero-sum game
-                game_values = [rewards[i] for i in range(num_snakes)] * len(game_states)
-
-        # Add game data to replay buffer
-        for state_tensor, target_policies_per_state, value in zip(game_states, game_policies, game_values):
+    for game_data in results:
+        for state_tensor, target_policies_per_state, value in game_data:
             replay_buffer.add(state_tensor, target_policies_per_state, value)
 
+    # Remove the temporary model file
+    os.remove(temp_model_file)
+
     return replay_buffer
+
+def self_play_game(args):
+    """
+    Plays a single game for self-play. This function is designed to be run in a separate process.
+    """
+    model_file, num_simulations, num_snakes, game_index = args
+
+    # Load the model in the subprocess
+    model = tf.keras.models.load_model(model_file)
+
+    # Initialize game-specific variables
+    game_states = []
+    game_policies = []
+    game_values = []
+    game_over = False
+
+    # Initialize GameState
+    board_size = (11, 11)
+    snake_bodies = []
+    food_positions = []
+
+    # Generate starting positions and orientations
+    positions, orientations = generate_snake_start_positions(num_snakes, board_size)
+
+    # Create snake bodies with segments stacked at the starting position
+    for pos, orientation in zip(positions, orientations):
+        body_length = 3  # Initial length of the snake
+        body = np.array([pos for _ in range(body_length)])
+        snake_bodies.append(body)
+
+        # Place food near each snake within two squares
+        food_x = (pos[0] + 2 * orientation[0]) % board_size[0]
+        food_y = (pos[1] + 2 * orientation[1]) % board_size[1]
+        food_positions.append(np.array([food_x, food_y]))
+
+    # Place additional food in the center
+    center_food = np.array([board_size[0] // 2, board_size[1] // 2])
+    food_positions.append(center_food)
+
+    game_state = GameState(board_size, snake_bodies, food_positions)
+
+    while not game_over:
+        # Run MCTS to get the best joint action
+        root = MCTSNode(copy.deepcopy(game_state))
+        best_joint_action_indices = mcts_search(root, model, num_simulations, num_snakes)
+
+        # Apply the joint action
+        moves = [ACTIONS[action_idx] for action_idx in best_joint_action_indices]
+        game_state.apply_moves(np.array(moves))
+
+        # Record the state
+        state_tensor = game_state.get_state_as_tensor()
+        game_states.append(state_tensor)
+
+        # Compute target policies based on MCTS visit counts
+        visit_counts_per_snake = [np.zeros(NUM_ACTIONS) for _ in range(num_snakes)]
+        total_visits = 0
+
+        for child in root.children.values():
+            joint_action = child.action  # Tuple of action indices per snake
+            visit_count = child.visit_count
+            total_visits += visit_count
+            for i in range(num_snakes):
+                visit_counts_per_snake[i][joint_action[i]] += visit_count
+
+        # Determine alive snakes
+        alive_snakes_indices = [i for i, alive in enumerate(game_state.alive_snakes) if alive]
+
+        # Normalize the visit counts to get target policies
+        target_policies = []
+        for i in range(num_snakes):
+            if i in alive_snakes_indices:
+                if total_visits > 0:
+                    target_policy = visit_counts_per_snake[i] / total_visits
+                else:
+                    target_policy = np.ones(NUM_ACTIONS, dtype=np.float32) / NUM_ACTIONS  # Uniform distribution if no visits
+            else:
+                # Snake is dead; set target policy to zeros
+                target_policy = np.zeros(NUM_ACTIONS, dtype=np.float32)
+            target_policy = target_policy.reshape(NUM_ACTIONS)
+            target_policies.append(target_policy)
+        game_policies.append(target_policies)
+
+        # Get the value from the model for training (optional)
+        outputs = model.predict(np.expand_dims(state_tensor, axis=0), verbose=0)
+        value = outputs[-1][0][0]  # Scalar value
+        game_values.append(value)
+
+        # Check if the game is over
+        if not any(game_state.alive_snakes):
+            game_over = True
+            rewards = [-1] * num_snakes  # All snakes lost
+        elif sum(game_state.alive_snakes) == 1:
+            game_over = True
+            winning_snake = np.argmax(game_state.alive_snakes)
+            rewards = [-1] * num_snakes
+            rewards[winning_snake] = 1  # Winning snake gets +1 reward
+        else:
+            rewards = [0] * num_snakes  # Game continues
+
+        # Assign rewards if the game is over
+        if game_over:
+            # Assuming zero-sum game
+            game_values = [rewards[i] for i in range(num_snakes)] * len(game_states)
+
+    # Prepare game data to return
+    game_data = []
+    for state_tensor, target_policies_per_state, value in zip(game_states, game_policies, game_values):
+        game_data.append((state_tensor, target_policies_per_state, value))
+
+    return game_data
 
 def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
     state_tensors, target_policies, target_values = replay_buffer.sample(batch_size)
@@ -186,11 +218,10 @@ def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
     target_policies_per_snake = [[] for _ in range(num_snakes)]
 
     # Iterate over the batch
-    for idx, policy_list in enumerate(target_policies):
+    for policy_list in target_policies:
         for i in range(num_snakes):
             policy = policy_list[i]
-            # Ensure policy is a NumPy array of shape (NUM_ACTIONS,)
-            policy = np.array(policy, dtype=np.float32).reshape(NUM_ACTIONS)
+            policy = policy.reshape(NUM_ACTIONS)
             target_policies_per_snake[i].append(policy)
 
     # Stack policies for each snake
@@ -204,7 +235,6 @@ def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
         # Compute policy loss for each snake
         policy_loss = 0
         for i in range(num_snakes):
-            # Ensure shapes match
             logits = policy_logits_list[i]
             labels = target_policies_stacked[i]
 
@@ -224,23 +254,21 @@ def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
 
 def save_model(model, iteration):
     # Generate a unique filename based on the iteration and current timestamp
-    unique_filename = f'model_iteration_{iteration}_{int(time.time())}.h5'
+    unique_filename = f'model_iteration_{iteration}_{int(time.time())}.keras'
     
     # Save the model with the unique filename
     model.save(unique_filename)
     print(f"Model saved as {unique_filename}")
     
-    # Also save the model as 'latest_model.h5'
-    model.save('latest_model.h5')
-    print("Model also saved as latest_model.h5")
+    # Also save the model as 'latest_model.keras'
+    model.save('latest_model.keras')
+    print("Model also saved as latest_model.keras")
 
 def load_latest_model():
     try:
-        model = load_model('latest_model.h5')
-        print("Loaded model from latest_model.h5")
+        model = load_model('latest_model.keras')
+        print("Loaded model from latest_model.keras")
         return model
     except OSError:
         print("No saved model found. Starting from scratch.")
         return None
-
-

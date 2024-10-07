@@ -7,7 +7,7 @@ from tensorflow.keras import layers
 import random
 from collections import deque
 import copy
-from multiprocessing import Process, Queue, current_process
+from multiprocessing import Process, Manager, current_process
 
 # Import classes and functions
 from game_state import GameState
@@ -192,33 +192,34 @@ def self_play(model, num_games, num_simulations, num_snakes):
     """
     Generates training data through self-play using multiple processes.
     """
-    # Create queues for communication
-    request_queue = Queue()
-    response_queue = Queue()
+    # Create a Manager to manage shared objects
+    with Manager() as manager:
+        request_queue = manager.Queue()
+        response_queue = manager.Queue()
 
-    # Start the inference server in a separate process
-    server_process = Process(target=inference_server,
-                             args=(request_queue, response_queue, model))
-    server_process.start()
+        # Start the inference server in a separate process
+        server_process = Process(target=inference_server,
+                                 args=(request_queue, response_queue, model))
+        server_process.start()
 
-    # Prepare arguments for each game
-    args_list = [(request_queue, response_queue, num_simulations, num_snakes, i)
-                 for i in range(num_games)]
+        # Prepare arguments for each game
+        args_list = [(request_queue, response_queue, num_simulations, num_snakes, i)
+                     for i in range(num_games)]
 
-    # Use multiprocessing Pool for parallel execution
-    from multiprocessing import Pool
-    with Pool() as pool:
-        results = pool.map(self_play_game, args_list)
+        # Use multiprocessing Pool for parallel execution
+        from multiprocessing import Pool
+        with Pool() as pool:
+            results = pool.map(self_play_game, args_list)
 
-    # Combine results into a single replay buffer
-    replay_buffer = ReplayBuffer()
-    for game_data in results:
-        for state_tensor, target_policies_per_state, value in game_data:
-            replay_buffer.add(state_tensor, target_policies_per_state, value)
+        # Combine results into a single replay buffer
+        replay_buffer = ReplayBuffer()
+        for game_data in results:
+            for state_tensor, target_policies_per_state, value in game_data:
+                replay_buffer.add(state_tensor, target_policies_per_state, value)
 
-    # Send shutdown signal to the inference server
-    request_queue.put(None)
-    server_process.join()
+        # Send shutdown signal to the inference server
+        request_queue.put(None)
+        server_process.join()
 
     return replay_buffer
 

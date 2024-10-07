@@ -32,11 +32,8 @@ def mcts_search(root: MCTSNode, model: tf.keras.Model, num_simulations: int, num
             joint_action, node = select_child(node)
             search_path.append(node)
 
-        # Expansion
-        expand_node(node, model, num_snakes)
-
-        # Rollout
-        value = rollout(node.state, num_snakes)
+        # Expansion and Evaluation
+        value = expand_and_evaluate(node, model, num_snakes)
 
         # Backpropagation
         backpropagate(search_path, value)
@@ -65,10 +62,12 @@ def select_child(node: MCTSNode) -> Tuple[Tuple[int, ...], MCTSNode]:
     best_joint_action = None
     best_child = None
 
+    c_puct = 1.0  # Exploration constant; adjust as needed
+
     for joint_action, child in node.children.items():
         # UCB formula adjusted for multi-agent scenario
-        q_value = child.total_value / (child.visit_count + 1e-6)
-        u_value = 2 * child.prior * np.sqrt(total_visits) / (1 + child.visit_count)
+        q_value = child.total_value / (child.visit_count + 1e-6)  # Average value per snake
+        u_value = c_puct * child.prior * np.sqrt(total_visits) / (1 + child.visit_count)
         ucb_score = np.sum(q_value) + u_value  # Sum over all snakes
 
         if ucb_score > best_score:
@@ -78,15 +77,16 @@ def select_child(node: MCTSNode) -> Tuple[Tuple[int, ...], MCTSNode]:
 
     return best_joint_action, best_child
 
-def expand_node(node: MCTSNode, model: tf.keras.Model, num_snakes: int) -> None:
-    """Expands the node by adding all possible joint actions."""
+def expand_and_evaluate(node: MCTSNode, model: tf.keras.Model, num_snakes: int) -> np.ndarray:
+    """Expands the node by adding all possible joint actions and evaluates the state using the neural network."""
     state_tensor = node.state.get_state_as_tensor()
-    # Evaluate the state using the model
     outputs = model.predict(np.expand_dims(state_tensor, axis=0), verbose=0)
-    policy_logits = outputs[:num_snakes]
-    # We do not use the value from the model here since we are doing rollouts
+
+    # Extract the value estimates for each snake
+    values = np.array([output[0][0] for output in outputs[num_snakes:]])  # Values per snake
 
     # Convert logits to probabilities
+    policy_logits = outputs[:num_snakes]
     policy_probs = [tf.nn.softmax(logits[0]).numpy() for logits in policy_logits]
 
     # Generate possible actions for alive snakes
@@ -122,11 +122,14 @@ def expand_node(node: MCTSNode, model: tf.keras.Model, num_snakes: int) -> None:
             else:
                 moves.append(np.array([0, 0]))  # Dead snakes don't move
         new_state.apply_moves(np.array(moves))
+
         child_node = MCTSNode(new_state, parent=node, action=tuple(joint_action_indices))
         child_node.prior = joint_prior
         node.children[tuple(joint_action_indices)] = child_node
 
-def rollout(state: GameState, num_snakes: int, max_rollout_depth: int = 110) -> np.ndarray:
+    return values  # Return the value estimates per snake
+
+def rollout(state: GameState, num_snakes: int, max_rollout_depth: int = 20) -> np.ndarray:
     """Performs a random rollout from the given state."""
     current_state = copy.deepcopy(state)
     for _ in range(max_rollout_depth):
@@ -135,12 +138,9 @@ def rollout(state: GameState, num_snakes: int, max_rollout_depth: int = 110) -> 
         moves = []
         for i in range(num_snakes):
             if current_state.alive_snakes[i]:
-                safe_actions = current_state.get_safe_actions(i)
-                if safe_actions:
-                    action_idx = random.choice(safe_actions)
-                else:
-                    # No safe actions; choose randomly from all actions
-                    action_idx = random.choice(current_state.get_valid_actions(i))
+                # Get all possible actions
+                actions = list(ACTIONS.keys())
+                action_idx = random.choice(actions)
                 moves.append(ACTIONS[action_idx])
             else:
                 moves.append(np.array([0, 0]))  # Dead snake doesn't move
@@ -149,21 +149,23 @@ def rollout(state: GameState, num_snakes: int, max_rollout_depth: int = 110) -> 
     return evaluate_state(current_state, num_snakes)
 
 def evaluate_state(state: GameState, num_snakes: int) -> np.ndarray:
-    """Returns an array of values for each snake: 1 for win, -1 for loss, 0 for tie."""
+    """Returns an array of values for each snake based on the final state."""
     values = np.zeros(num_snakes)
     alive_snakes_indices = [i for i, alive in enumerate(state.alive_snakes) if alive]
 
     if len(alive_snakes_indices) == 0:
-        # All snakes are dead; it's a tie
-        values[:] = 0
+        # All snakes are dead; consider it a tie or zero reward
+        values[:] = 0.0
     elif len(alive_snakes_indices) == 1:
         # One snake remains; they win
         winner = alive_snakes_indices[0]
-        values[:] = -1  # All others lose
-        values[winner] = 1  # Winner gets +1
+        values[winner] = 1.0  # Winner gets +1
+        for i in range(num_snakes):
+            if i != winner:
+                values[i] = -1.0  # Losers get -1
     else:
-        # Game ended due to max depth; consider it a tie
-        values[:] = 0
+        # Game ended due to max depth or multiple snakes alive; assign zero reward
+        values[:] = 0.0
     return values
 
 def backpropagate(search_path: List[MCTSNode], value: np.ndarray) -> None:
@@ -171,4 +173,5 @@ def backpropagate(search_path: List[MCTSNode], value: np.ndarray) -> None:
     for node in reversed(search_path):
         node.visit_count += 1
         node.total_value += value  # value is an array per snake
-        # For multi-agent games, we propagate the values as is.
+        # Do not invert the values, as we are not assuming a zero-sum game
+        # Each snake's value is independent and should be propagated as is

@@ -225,7 +225,7 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
         'winner': winning_snake if game_over else None
     }
 
-    print(f"Game {game_index} finished. Steps: {step_count}, Average MCTS Depth: {avg_game_mcts_depth:.2f}")
+    print(f"Game {game_index} finished. Steps: {step_count}, Average MCTS Depth: {avg_game_mcts_depth:.2f}. Winner: {winning_snake}")
 
     return game_data, game_summary
 

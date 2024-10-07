@@ -289,7 +289,7 @@ import glob
 from typing import Tuple
 from tensorflow import keras
 
-def save_model(model: keras.Model, optimizer: keras.optimizers.Optimizer, iteration: int, num_snakes: int, board_size: Tuple[int, int]) -> None:
+def save_model(model: keras.Model, iteration: int, num_snakes: int, board_size: Tuple[int, int]) -> None:
     """
     Save the model and optimizer with the specified parameters embedded in the filename.
     """
@@ -310,15 +310,9 @@ def save_model(model: keras.Model, optimizer: keras.optimizers.Optimizer, iterat
     # Save the model with the unique filename
     model.save(unique_filename)
 
-    # Save the optimizer state
-    optimizer_weights = optimizer.get_weights()
-    optimizer_filename = unique_filename.replace('.keras', '_optimizer.pkl')
-    with open(optimizer_filename, 'wb') as f:
-        pickle.dump(optimizer_weights, f)
+    print(f"Model saved as {unique_filename} ")
 
-    print(f"Model and optimizer saved as {unique_filename} and {optimizer_filename}")
-
-def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> Tuple[keras.Model, keras.optimizers.Optimizer]:
+def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> keras.Model:
     """
     Load the latest model and optimizer that match the specified num_snakes and board_size.
     """
@@ -346,19 +340,8 @@ def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> Tuple[ker
     # Load the latest matching model
     model = keras.models.load_model(latest_model_file)
     print(f"Loaded model from {latest_model_file}")
-
-    # Load the optimizer state
-    optimizer = keras.optimizers.Adam(learning_rate=0.001)
-    optimizer_filename = latest_model_file.replace('.keras', '_optimizer.pkl')
-    if os.path.exists(optimizer_filename):
-        with open(optimizer_filename, 'rb') as f:
-            optimizer_weights = pickle.load(f)
-        optimizer.set_weights(optimizer_weights)
-        print("Optimizer state loaded.")
-    else:
-        print("No optimizer state found; starting with a new optimizer.")
     
-    return model, optimizer
+    return model
 
 
 

@@ -25,14 +25,14 @@ num_simulations = 10  # MCTS simulations per move
 batch_size = 20  # Batch size for training
 evaluation_interval = 5  # Evaluate every 5 iterations
 num_evaluation_games = 10  # Number of games for evaluation
+optimizer = keras.optimizers.Adam(learning_rate=0.001)
 
 # Load the latest model and optimizer
-model, optimizer = load_latest_model(num_snakes=num_snakes,
-                                     board_size=(board_height, board_width))
+model = load_latest_model(num_snakes=num_snakes,
+                        board_size=(board_height, board_width))
 
 if model is None:
     model = create_model(board_height, board_width, num_snakes, NUM_ACTIONS)
-    optimizer = keras.optimizers.Adam(learning_rate=0.001)
     print("Starting with a new model.")
 else:
     print("Model and optimizer loaded successfully.")
@@ -67,7 +67,7 @@ for iteration in range(num_iterations):
 
     losses = []
     for _ in range(num_batches):
-        loss, policy_loss, value_loss = train_model(model, optimizer,
+        loss, policy_loss, value_loss = train_model(model,
                                                     replay_buffer, batch_size,
                                                     num_snakes)
         losses.append(loss)
@@ -77,7 +77,7 @@ for iteration in range(num_iterations):
     print(f"Average training loss: {avg_loss:.4f}")
 
     # Save the model and optimizer after each iteration
-    save_model(model, optimizer, iteration + 1, num_snakes=num_snakes,
+    save_model(model, iteration + 1, num_snakes=num_snakes,
                board_size=(board_height, board_width))
 
     # Evaluate the model every iteration

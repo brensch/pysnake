@@ -74,41 +74,29 @@ def generate_snake_start_positions(num_snakes, board_size):
         orientations.append(orientation)
     return positions, orientations
 
+from concurrent.futures import ThreadPoolExecutor
+
 def self_play(model, num_games, num_simulations, num_snakes):
-    """
-    Generates training data through self-play using multiple processes.
-    """
-    # Save the current model to a temporary file
-    temp_model_file = 'temp_model.keras'
-    model.save(temp_model_file)
+    args_list = [(model, num_simulations, num_snakes, i) for i in range(num_games)]
 
-    # Prepare arguments for each game
-    args_list = [(temp_model_file, num_simulations, num_snakes, i) for i in range(num_games)]
-
-    # Use ProcessPoolExecutor for parallel execution
-    with ProcessPoolExecutor() as executor:
-        # Map the self_play_game function to the arguments
+    # Use ThreadPoolExecutor instead of ProcessPoolExecutor
+    with ThreadPoolExecutor(max_workers=4) as executor:
         results = list(executor.map(self_play_game, args_list))
 
-    # Combine results into a single replay buffer
+    # Combine results into a replay buffer
     replay_buffer = ReplayBuffer()
     for game_data in results:
         for state_tensor, target_policies_per_state, value in game_data:
             replay_buffer.add(state_tensor, target_policies_per_state, value)
 
-    # Remove the temporary model file
-    os.remove(temp_model_file)
-
     return replay_buffer
+
 
 def self_play_game(args):
     """
     Plays a single game for self-play. This function is designed to be run in a separate process.
     """
-    model_file, num_simulations, num_snakes, game_index = args
-
-    # Load the model in the subprocess
-    model = tf.keras.models.load_model(model_file)
+    model, num_simulations, num_snakes, game_index = args
 
     # Initialize game-specific variables
     game_states = []
@@ -252,10 +240,6 @@ def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
     return total_loss.numpy(), policy_loss.numpy(), value_loss.numpy()
-
-
-
-
 
 # Ensure the models directory exists
 if not os.path.exists('models'):

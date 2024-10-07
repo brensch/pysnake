@@ -67,7 +67,7 @@ for iteration in range(num_iterations):
 
     losses = []
     for _ in range(num_batches):
-        loss, policy_loss, value_loss = train_model(model,
+        loss, policy_loss, value_loss = train_model(model, optimizer,
                                                     replay_buffer, batch_size,
                                                     num_snakes)
         losses.append(loss)

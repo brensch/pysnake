@@ -9,6 +9,7 @@ from collections import deque
 import copy
 from typing import List, Tuple, Dict
 import pickle
+from datetime import datetime
 
 # Import classes and functions
 from game_state import GameState
@@ -125,19 +126,22 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
         best_joint_action_indices, avg_mcts_depth = mcts_search(root, model, num_simulations, num_snakes)
         mcts_depths.append(avg_mcts_depth)
 
-        # Print details about the current MCTS node statistics
-        print(f"\nStep {step_count + 1}")
-        print(f"  Total MCTS Simulations: {num_simulations}")
-        print(f"  Total Nodes Visited: {sum(child.visit_count for child in root.children.values())}")
-        print(f"  Average MCTS Depth: {avg_mcts_depth:.2f}")
-        for joint_action, child in root.children.items():
-            # Convert joint_action to a list for printing
-            joint_action_list = list(joint_action)
-            # Compute average values per snake
-            average_values = child.total_value / max(child.visit_count, 1)
-            # Format the values per snake
-            values_str = ', '.join(f'Snake {i}: {value:.4f}' for i, value in enumerate(average_values))
-            print(f"  Action {joint_action_list}: Visits = {child.visit_count}, Values = [{values_str}]")
+        # # Print details about the current MCTS node statistics
+        # print(f"\nStep {step_count + 1}")
+        # print(f"  Total MCTS Simulations: {num_simulations}")
+        # print(f"  Total Nodes Visited: {sum(child.visit_count for child in root.children.values())}")
+        # print(f"  Average MCTS Depth: {avg_mcts_depth:.2f}")
+
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Step {step_count + 1} | Total MCTS Simulations: {num_simulations} | Total Nodes Visited: {sum(child.visit_count for child in root.children.values())} | Average MCTS Depth: {avg_mcts_depth:.2f}")
+
+        # for joint_action, child in root.children.items():
+        #     # Convert joint_action to a list for printing
+        #     joint_action_list = list(joint_action)
+        #     # Compute average values per snake
+        #     average_values = child.total_value / max(child.visit_count, 1)
+        #     # Format the values per snake
+        #     values_str = ', '.join(f'Snake {i}: {value:.4f}' for i, value in enumerate(average_values))
+        #     print(f"  Action {joint_action_list}: Visits = {child.visit_count}, Values = [{values_str}]")
             
             # # Correctly apply the joint action to the temporary game state
             # temp_game = copy.deepcopy(game_state)

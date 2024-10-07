@@ -21,7 +21,7 @@ board_height, board_width = 11, 11
 num_snakes = 2  # Number of snakes
 num_iterations = 30  # Number of training iterations
 num_games_per_iteration = 10  # Games per iteration
-num_simulations = 1000  # MCTS simulations per move
+num_simulations = 10  # MCTS simulations per move
 batch_size = 20  # Batch size for training
 evaluation_interval = 5  # Evaluate every 5 iterations
 num_evaluation_games = 10  # Number of games for evaluation
@@ -80,12 +80,11 @@ for iteration in range(num_iterations):
     save_model(model, optimizer, iteration + 1, num_snakes=num_snakes,
                board_size=(board_height, board_width))
 
-    # Evaluate the model every few iterations
-    if iteration > 0 and (iteration + 1) % evaluation_interval == 0:
-        print(f"Evaluating model at iteration {iteration + 1}")
-        previous_model_file = get_model_path(iteration, num_snakes, (board_height, board_width))
-        previous_model = keras.models.load_model(previous_model_file)
-        win_rate = evaluate_model(model, previous_model, num_evaluation_games, num_simulations, num_snakes)
-        print(f"Win rate against previous model: {win_rate:.2%}")
+    # Evaluate the model every iteration
+    print(f"Evaluating model at iteration {iteration + 1}")
+    previous_model_file = get_model_path(iteration, num_snakes, (board_height, board_width))
+    previous_model = keras.models.load_model(previous_model_file)
+    win_rate = evaluate_model(model, previous_model, num_evaluation_games, num_simulations, num_snakes)
+    print(f"Win rate against previous model: {win_rate:.2%}")
 
 print("Training completed.")

@@ -422,11 +422,14 @@ def evaluate_model(current_model: keras.Model, previous_model: keras.Model,
 
     for game_index in range(num_games):
         winner = play_evaluation_game(current_model, previous_model, num_simulations, num_snakes, game_index)
+        print(winner)
         if winner == 'current':
             current_model_wins += 1
         elif winner == 'draw':
             draws += 1
         # Else, the previous model wins (no need to count separately unless desired)
+
+    print(f"wins: {current_model_wins}, draws: {draws}")
 
     win_rate = current_model_wins / num_games
     return win_rate

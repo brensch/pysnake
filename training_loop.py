@@ -19,11 +19,10 @@ from game_state import GameState
 # Training parameters
 board_height, board_width = 11, 11
 num_snakes = 2  # Number of snakes
-num_iterations = 30  # Number of training iterations
+num_iterations = 100  # Number of training iterations
 num_games_per_iteration = 10  # Games per iteration
-num_simulations = 10  # MCTS simulations per move
+num_simulations = 1000  # MCTS simulations per move
 batch_size = 20  # Batch size for training
-evaluation_interval = 5  # Evaluate every 5 iterations
 num_evaluation_games = 10  # Number of games for evaluation
 optimizer = keras.optimizers.Adam(learning_rate=0.001)
 

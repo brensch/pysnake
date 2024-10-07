@@ -130,7 +130,13 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
         print(f"  Total Nodes Visited: {sum(child.visit_count for child in root.children.values())}")
         print(f"  Average MCTS Depth: {avg_mcts_depth:.2f}")
         for joint_action, child in root.children.items():
-            print(f"  Action {joint_action.tolist()}: Visits = {child.visit_count}, Value = {child.total_value / max(child.visit_count, 1):.4f}")
+            # Convert joint_action to a list for printing
+            joint_action_list = list(joint_action)
+            # Compute average values per snake
+            average_values = child.total_value / max(child.visit_count, 1)
+            # Format the values per snake
+            values_str = ', '.join(f'Snake {i}: {value:.4f}' for i, value in enumerate(average_values))
+            print(f"  Action {joint_action_list}: Visits = {child.visit_count}, Values = [{values_str}]")
 
         # Apply the joint action
         moves = [ACTIONS[action_idx] for action_idx in best_joint_action_indices]
@@ -215,7 +221,6 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
     print(f"Game {game_index} finished. Steps: {step_count}, Average MCTS Depth: {avg_game_mcts_depth:.2f}")
 
     return game_data, game_summary
-
 
 def train_model(model: keras.Model, optimizer: keras.optimizers.Optimizer, replay_buffer: ReplayBuffer, batch_size: int, num_snakes: int) -> Tuple[float, float, float]:
     state_tensors, target_policies, target_values = replay_buffer.sample(batch_size)

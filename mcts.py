@@ -1,8 +1,7 @@
-# mcts.py
-
 import numpy as np
 import tensorflow as tf
 import copy
+from multiprocessing import current_process
 
 from game_state import GameState
 
@@ -28,7 +27,7 @@ class MCTSNode:
     def is_expanded(self):
         return len(self.children) > 0
 
-def mcts_search(root, model, num_simulations, num_snakes):
+def mcts_search(root, request_queue, response_queue, num_simulations, num_snakes):
     for _ in range(num_simulations):
         node = root
         search_path = [node]
@@ -39,7 +38,7 @@ def mcts_search(root, model, num_simulations, num_snakes):
             search_path.append(node)
 
         # Expansion and Evaluation
-        value = expand_and_evaluate(node, model, num_snakes)
+        value = expand_and_evaluate(node, request_queue, response_queue, num_snakes)
 
         # Backpropagation
         backpropagate(search_path, value)
@@ -75,15 +74,22 @@ def select_child(node):
 
     return best_joint_action, best_child
 
-def expand_and_evaluate(node, model, num_snakes):
+def expand_and_evaluate(node, request_queue, response_queue, num_snakes):
     """
     Expands the node by adding all possible joint actions and evaluates the state using the neural network.
     """
     state_tensor = node.state.get_state_as_tensor()
-    state_tensor = np.expand_dims(state_tensor, axis=0)  # Add batch dimension
-
-    # Get policy logits and value from the model
-    outputs = model.predict(state_tensor, verbose=0)
+    # Send inference request to the inference server
+    idx = current_process().pid  # Use process PID as unique identifier
+    request_queue.put((idx, state_tensor))
+    # Wait for the response
+    while True:
+        resp_idx, outputs = response_queue.get()
+        if resp_idx == idx:
+            break
+        else:
+            # Put back the response if it's not for this process
+            response_queue.put((resp_idx, outputs))
     policy_logits = outputs[:num_snakes]
     value = outputs[-1][0][0]  # Extract scalar value
 

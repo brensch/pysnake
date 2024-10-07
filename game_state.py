@@ -140,7 +140,6 @@ class GameState:
         alive_indices = np.where(self.alive_snakes)[0]
 
         # Build body occupancy grid excluding heads of alive snakes
-        # Exclude bodies of snakes that died in head-to-head collisions
         body_occupancy = np.full(self.board_size, -1, dtype=int)
         for i in alive_indices:
             body = new_bodies[i][1:]  # Exclude the new head
@@ -169,17 +168,27 @@ class GameState:
                 self.food_layer[head[1], head[0]] = 0  # Remove the food
                 self.snake_health[i] = 100  # Reset health to 100
 
+        # Update snake bodies
+        self.snake_bodies = new_bodies
+
+        # Re-initialize snake layers with updated bodies and health
+        self.initialize_snakes()
+
+        self.turn += 1  # Increment the turn counter
+
         # After handling snake movements and collisions, add food with a random chance
-        food_add_probability = 0.1
+        food_add_probability = 0.5  # 50% chance to add a food item
 
         if random.random() < food_add_probability:
-            # Find unoccupied positions
+            # Find occupied positions
             occupied_positions = set()
             for snake in self.snake_bodies:
                 for segment in snake:
                     occupied_positions.add((segment[0], segment[1]))
-            for food in self.food_positions:
-                occupied_positions.add((food[0], food[1]))
+            # Get current food positions
+            food_positions = np.argwhere(self.food_layer == 1)
+            for food in food_positions:
+                occupied_positions.add((food[1], food[0]))  # Note: indices are [y, x], so swap
 
             # Generate a list of all positions on the board
             all_positions = set((x, y) for x in range(self.board_size[0]) for y in range(self.board_size[1]))
@@ -190,15 +199,7 @@ class GameState:
             if unoccupied_positions:
                 # Choose a random unoccupied position to place food
                 new_food_position = random.choice(unoccupied_positions)
-                self.food_positions.append(np.array(new_food_position))
-
-        # Update snake bodies
-        self.snake_bodies = new_bodies
-
-        # Re-initialize snake layers with updated bodies and health
-        self.initialize_snakes()
-
-        self.turn += 1  # Increment the turn counter
+                self.food_layer[new_food_position[1], new_food_position[0]] = 1  # Add new food
 
     def is_terminal(self) -> bool:
         """Check if the game is over."""
@@ -269,7 +270,9 @@ class GameState:
             snake_body = np.argwhere(snake_body_layer > 0)
             snake_bodies.append(snake_body)
 
+        # Extract food positions from the food layer
         food_positions = np.argwhere(state_tensor[..., -1] == 1)
+        food_positions = [np.array([pos[1], pos[0]]) for pos in food_positions]  # Convert to (x, y)
 
         # Initialize GameState with the extracted information
         return cls(board_size, snake_bodies, food_positions)

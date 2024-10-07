@@ -3,6 +3,8 @@
 import tensorflow as tf
 from tensorflow import keras
 from train_utils import (
+    evaluate_model,
+    get_model_path,
     self_play,
     train_model,
     save_model,
@@ -14,26 +16,26 @@ from mcts import NUM_ACTIONS
 import numpy as np
 from game_state import GameState
 
-# Initialize the model and optimizer
+# Training parameters
 board_height, board_width = 11, 11
-num_snakes = 2  # Set the number of snakes
-optimizer = keras.optimizers.Adam(learning_rate=0.001)
+num_snakes = 2  # Number of snakes
+num_iterations = 30  # Number of training iterations
+num_games_per_iteration = 10  # Games per iteration
+num_simulations = 1000  # MCTS simulations per move
+batch_size = 20  # Batch size for training
+evaluation_interval = 5  # Evaluate every 5 iterations
+num_evaluation_games = 10  # Number of games for evaluation
 
-# Load the latest model based on the parameters, or start from scratch
-model = load_latest_model(num_snakes=num_snakes,
-                          board_size=(board_height, board_width))
+# Load the latest model and optimizer
+model, optimizer = load_latest_model(num_snakes=num_snakes,
+                                     board_size=(board_height, board_width))
 
 if model is None:
     model = create_model(board_height, board_width, num_snakes, NUM_ACTIONS)
+    optimizer = keras.optimizers.Adam(learning_rate=0.001)
     print("Starting with a new model.")
 else:
-    print("Model loaded successfully.")
-
-# Training parameters
-num_iterations = 1  # Number of training iterations
-num_games_per_iteration = 1  # Games per iteration (set to 2 for testing)
-num_simulations = 10  # simulations is basically the number of nodes
-batch_size = 2 # Batch size for training
+    print("Model and optimizer loaded successfully.")
 
 training_losses = []  # To store training losses for visualization
 
@@ -51,7 +53,7 @@ for iteration in range(num_iterations):
         print(f"  Steps: {summary['step_count']}")
         print(f"  Average MCTS Depth: {summary['avg_mcts_depth']:.2f}")
         print(f"  Winner: {'Snake ' + str(summary['winner']) if summary['winner'] is not None else 'Draw'}")
-        # Visualize the game
+        # Visualize the game (optional)
         # visualize_game(summary, num_snakes, (board_height, board_width))
 
     # Train the model
@@ -74,8 +76,16 @@ for iteration in range(num_iterations):
     training_losses.append(avg_loss)
     print(f"Average training loss: {avg_loss:.4f}")
 
-    # Save the model after each iteration with training parameters
-    save_model(model, iteration + 1, num_snakes=num_snakes,
+    # Save the model and optimizer after each iteration
+    save_model(model, optimizer, iteration + 1, num_snakes=num_snakes,
                board_size=(board_height, board_width))
+
+    # Evaluate the model every few iterations
+    if iteration > 0 and (iteration + 1) % evaluation_interval == 0:
+        print(f"Evaluating model at iteration {iteration + 1}")
+        previous_model_file = get_model_path(iteration, num_snakes, (board_height, board_width))
+        previous_model = keras.models.load_model(previous_model_file)
+        win_rate = evaluate_model(model, previous_model, num_evaluation_games, num_simulations, num_snakes)
+        print(f"Win rate against previous model: {win_rate:.2%}")
 
 print("Training completed.")

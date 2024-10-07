@@ -8,6 +8,7 @@ import random
 from collections import deque
 import copy
 from typing import List, Tuple, Dict
+import pickle
 
 # Import classes and functions
 from game_state import GameState
@@ -138,12 +139,12 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
             values_str = ', '.join(f'Snake {i}: {value:.4f}' for i, value in enumerate(average_values))
             print(f"  Action {joint_action_list}: Visits = {child.visit_count}, Values = [{values_str}]")
             
-            # Correctly apply the joint action to the temporary game state
-            temp_game = copy.deepcopy(game_state)
-            # Convert action indices to movement vectors
-            moves = [ACTIONS[action_idx] for action_idx in joint_action]
-            temp_game.apply_moves(np.array(moves))
-            temp_game.visualize_board_ascii()
+            # # Correctly apply the joint action to the temporary game state
+            # temp_game = copy.deepcopy(game_state)
+            # # Convert action indices to movement vectors
+            # moves = [ACTIONS[action_idx] for action_idx in joint_action]
+            # temp_game.apply_moves(np.array(moves))
+            # temp_game.visualize_board_ascii()
 
         # Apply the joint action
         moves = [ACTIONS[action_idx] for action_idx in best_joint_action_indices]
@@ -277,7 +278,7 @@ def train_model(model: keras.Model, optimizer: keras.optimizers.Optimizer, repla
 
     return total_loss.numpy(), policy_loss.numpy(), value_loss.numpy()
 
-def save_model(model: keras.Model, iteration: int, num_snakes: int, board_size: Tuple[int, int]) -> None:
+def save_model(model: keras.Model, optimizer: keras.optimizers.Optimizer, iteration: int, num_snakes: int, board_size: Tuple[int, int]) -> None:
     """
     Save the model with the specified parameters embedded in the filename.
     """
@@ -297,9 +298,16 @@ def save_model(model: keras.Model, iteration: int, num_snakes: int, board_size: 
 
     # Save the model with the unique filename
     model.save(unique_filename)
-    print(f"Model saved as {unique_filename}")
+    # Save the model
+    model.save(unique_filename)
+    # Save the optimizer state
+    optimizer_weights = optimizer.get_weights()
+    optimizer_filename = unique_filename.replace('.keras', '_optimizer.pkl')
+    with open(optimizer_filename, 'wb') as f:
+        pickle.dump(optimizer_weights, f)
+    print(f"Model and optimizer saved as {unique_filename}")
 
-def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> keras.Model:
+def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> Tuple[keras.Model, keras.optimizers.Optimizer]:
     """
     Load the latest model that matches the specified num_snakes and board_size.
     """
@@ -330,8 +338,18 @@ def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> keras.Mod
     # Load the latest matching model
     model = keras.models.load_model(latest_model_file)
     print(f"Loaded model from {latest_model_file}")
+    # Load the optimizer state
+    optimizer = keras.optimizers.Adam(learning_rate=0.001)
+    optimizer_filename = latest_model_file.replace('.keras', '_optimizer.pkl')
+    if os.path.exists(optimizer_filename):
+        with open(optimizer_filename, 'rb') as f:
+            optimizer_weights = pickle.load(f)
+        optimizer.set_weights(optimizer_weights)
+        print("Optimizer state loaded.")
+    else:
+        print("No optimizer state found; starting with a new optimizer.")
+    return model, optimizer
 
-    return model
 
 def generate_snake_start_positions(num_snakes: int, board_size: Tuple[int, int]) -> Tuple[List[Tuple[int, int]], List[np.ndarray]]:
     positions: List[Tuple[int, int]] = []
@@ -369,3 +387,128 @@ def visualize_game(summary: Dict, num_snakes: int, board_size: Tuple[int, int]) 
         print(f"Step {step_num + 1}:")
         game_state.visualize_board_ascii()
         time.sleep(0.05)  # Pause briefly between steps
+
+import os
+import glob
+
+def get_model_path(iteration: int, num_snakes: int, board_size: Tuple[int, int]) -> str:
+    """
+    Retrieves the model file path for a given iteration.
+    """
+    models_dir = 'models'
+
+    # Convert the board size to a string format like '11x11'
+    board_size_str = f'{board_size[0]}x{board_size[1]}'
+
+    # Construct the search pattern
+    search_pattern = os.path.join(
+        models_dir,
+        f'model_iteration_{iteration}_snakes_{num_snakes}_board_{board_size_str}_*.keras'
+    )
+
+    # Find all matching model files
+    matching_files = glob.glob(search_pattern)
+
+    if not matching_files:
+        raise FileNotFoundError(f"No model file found for iteration {iteration}")
+
+    # If multiple files match, select the one with the latest timestamp
+    model_file = max(matching_files, key=os.path.getctime)
+
+    return model_file
+
+def evaluate_model(current_model: keras.Model, previous_model: keras.Model,
+                   num_games: int, num_simulations: int, num_snakes: int) -> float:
+    """
+    Evaluates the current model against the previous model by having them play games.
+    Returns the win rate of the current model.
+    """
+    current_model_wins = 0
+    draws = 0
+
+    for game_index in range(num_games):
+        winner = play_evaluation_game(current_model, previous_model, num_simulations, num_snakes, game_index)
+        if winner == 'current':
+            current_model_wins += 1
+        elif winner == 'draw':
+            draws += 1
+        # Else, the previous model wins (no need to count separately unless desired)
+
+    win_rate = current_model_wins / num_games
+    return win_rate
+
+
+def play_evaluation_game(current_model: keras.Model, previous_model: keras.Model,
+                         num_simulations: int, num_snakes: int, game_index: int) -> str:
+    """
+    Plays a single game where each model controls its own snake.
+    Returns 'current' if the current model wins, 'previous' if the previous model wins, or 'draw'.
+    """
+    # Initialize GameState
+    board_size = (11, 11)
+    snake_bodies: List[np.ndarray] = []
+    food_positions: List[np.ndarray] = []
+
+    # Generate starting positions and orientations
+    positions, orientations = generate_snake_start_positions(num_snakes, board_size)
+
+    # Create snake bodies with segments stacked at the starting position
+    for pos, orientation in zip(positions, orientations):
+        body_length = 3  # Initial length of the snake
+        body = np.array([pos for _ in range(body_length)])
+        snake_bodies.append(body)
+
+        # Place food near each snake within two squares
+        food_x = (pos[0] + 2 * orientation[0]) % board_size[0]
+        food_y = (pos[1] + 2 * orientation[1]) % board_size[1]
+        food_positions.append(np.array([food_x, food_y]))
+
+    # Place additional food in the center
+    center_food = np.array([board_size[0] // 2, board_size[1] // 2])
+    food_positions.append(center_food)
+
+    game_state = GameState(board_size, snake_bodies, food_positions)
+
+    game_over = False
+    step_count = 0
+    winning_snake = None
+
+    # Assign models to snakes
+    models = [current_model, previous_model]  # Assuming num_snakes == 2
+
+    while not game_over:
+        action_indices_per_snake = [0] * num_snakes  # Initialize action indices
+
+        # For each snake, run MCTS with its assigned model
+        for i in range(num_snakes):
+            if game_state.alive_snakes[i]:
+                root = MCTSNode(copy.deepcopy(game_state))
+                # Run MCTS for this model
+                best_joint_action_indices, _ = mcts_search(root, models[i], num_simulations, num_snakes)
+                # Extract the action index for this snake
+                action_indices_per_snake[i] = best_joint_action_indices[i]
+            else:
+                action_indices_per_snake[i] = 0  # Default action for dead snakes
+
+        # Apply the joint action
+        moves = [ACTIONS[action_idx] for action_idx in action_indices_per_snake]
+        game_state.apply_moves(np.array(moves))
+
+        # Check if the game is over
+        if game_state.is_terminal():
+            game_over = True
+            alive_snakes_indices = [i for i, alive in enumerate(game_state.alive_snakes) if alive]
+            if len(alive_snakes_indices) == 1:
+                winning_snake = alive_snakes_indices[0]
+            else:
+                winning_snake = None  # Draw
+
+        step_count += 1
+
+    # Determine the winner
+    if winning_snake == 0:
+        return 'current'
+    elif winning_snake == 1:
+        return 'previous'
+    else:
+        return 'draw'

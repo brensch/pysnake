@@ -1,5 +1,6 @@
 import numpy as np
 from typing import List, Tuple
+import random
 
 ACTIONS = {
     0: np.array([0, 1]),   # Up
@@ -167,6 +168,29 @@ class GameState:
                 new_bodies[i] = np.vstack((new_bodies[i], [tail]))  # Extend the body
                 self.food_layer[head[1], head[0]] = 0  # Remove the food
                 self.snake_health[i] = 100  # Reset health to 100
+
+        # After handling snake movements and collisions, add food with a random chance
+        food_add_probability = 0.1
+
+        if random.random() < food_add_probability:
+            # Find unoccupied positions
+            occupied_positions = set()
+            for snake in self.snake_bodies:
+                for segment in snake:
+                    occupied_positions.add((segment[0], segment[1]))
+            for food in self.food_positions:
+                occupied_positions.add((food[0], food[1]))
+
+            # Generate a list of all positions on the board
+            all_positions = set((x, y) for x in range(self.board_size[0]) for y in range(self.board_size[1]))
+
+            # Determine unoccupied positions
+            unoccupied_positions = list(all_positions - occupied_positions)
+
+            if unoccupied_positions:
+                # Choose a random unoccupied position to place food
+                new_food_position = random.choice(unoccupied_positions)
+                self.food_positions.append(np.array(new_food_position))
 
         # Update snake bodies
         self.snake_bodies = new_bodies

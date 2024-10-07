@@ -122,92 +122,92 @@ class TestGameState(unittest.TestCase):
 
         # Define test cases: each test contains an initial state, moves, expected state, and test name
         test_cases = [
-            # {
-            #     'name': 'Simple move without collision or eating',
-            #     'initial_state': {
-            #         'board_size': (5, 5),
-            #         'snake_bodies': [
-            #             np.array([[2, 2], [1, 2], [0, 2]]),  # Snake 1 body
-            #             np.array([[4, 4], [3, 4], [2, 4]])   # Snake 2 body
-            #         ],
-            #         'food_positions': np.array([[0, 0]]),
-            #         'snake_health': np.array([100, 100])
-            #     },
-            #     'moves': np.array([[1, 0], [0, -1]]),  # Snake 1 moves right, Snake 2 moves down
-            #     'expected_state': {
-            #         'board_size': (5, 5),
-            #         'snake_bodies': [
-            #             np.array([[3, 2], [2, 2], [1, 2]]),  # Snake 1 body after the move
-            #             np.array([[4, 3], [4, 4], [3, 4]])   # Snake 2 body after the move
-            #         ],
-            #         'food_positions': np.array([[0, 0]]),
-            #         'snake_health': np.array([99, 99])
-            #     }
-            # },
-            # {
-            #     'name': 'Collision with food',
-            #     'initial_state': {
-            #         'board_size': (5, 5),
-            #         'snake_bodies': [
-            #             np.array([[2, 2], [1, 2], [0, 2]])
-            #         ],
-            #         'food_positions': np.array([[3, 2]]),
-            #         'snake_health': np.array([100])
-            #     },
-            #     'moves': np.array([[1, 0]]),  # Snake moves right to eat food
-            #     'expected_state': {
-            #         'board_size': (5, 5),
-            #         'snake_bodies': [
-            #             np.array([[3, 2], [2, 2], [1, 2], [1, 2]])  # Snake has grown
-            #         ],
-            #         'food_positions': np.array([]),
-            #         'snake_health': np.array([100])  # Health restored to 100
-            #     }
-            # },
-            # {
-            #     'name': 'Head-to-body collision',
-            #     'initial_state': {
-            #         'board_size': (5, 5),
-            #         'snake_bodies': [
-            #             np.array([[2, 2], [2, 3], [2, 4]]),  # Snake 1
-            #             np.array([[3, 2], [3, 1], [3, 0]])   # Snake 2
-            #         ],
-            #         'food_positions': np.array([]),
-            #         'snake_health': np.array([100, 100])
-            #     },
-            #     'moves': np.array([[0, -1], [-1, 0]]),  # Snake 1 moves up, Snake 2 moves left
-            #     'expected_state': {
-            #         'board_size': (5, 5),
-            #         'snake_bodies': [
-            #             np.array([[2, 1], [2, 2], [2, 3]]),  # Snake 1 survives
-            #             np.array([]).reshape(0, 2)           # Snake 2 dies
-            #         ],
-            #         'food_positions': np.array([]),
-            #         'snake_health': np.array([99, 0])  # Snake 1 loses 1 health, Snake 2 is dead
-            #     }
-            # },
-            # {
-            #     'name': 'Head-to-head collision, equal length',
-            #     'initial_state': {
-            #         'board_size': (6, 6),
-            #         'snake_bodies': [
-            #             np.array([[2, 3], [2, 2]]),  # Snake 1
-            #             np.array([[2, 4], [2, 5]])   # Snake 2
-            #         ],
-            #         'food_positions': np.array([]),
-            #         'snake_health': np.array([100, 100])
-            #     },
-            #     'moves': np.array([[0, 1], [0, -1]]),  # Both snakes move into [2, 3]
-            #     'expected_state': {
-            #         'board_size': (6, 6),
-            #         'snake_bodies': [
-            #             np.array([]).reshape(0, 2),  # No snake bodies left
-            #             np.array([]).reshape(0, 2)
-            #         ],
-            #         'food_positions': np.array([]),
-            #         'snake_health': np.array([0, 0])  # Both snakes are dead
-            #     }
-            # },
+            {
+                'name': 'Simple move without collision or eating',
+                'initial_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([[2, 2], [1, 2], [0, 2]]),  # Snake 1 body
+                        np.array([[4, 4], [3, 4], [2, 4]])   # Snake 2 body
+                    ],
+                    'food_positions': np.array([[0, 0]]),
+                    'snake_health': np.array([100, 100])
+                },
+                'moves': np.array([[1, 0], [0, -1]]),  # Snake 1 moves right, Snake 2 moves down
+                'expected_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([[3, 2], [2, 2], [1, 2]]),  # Snake 1 body after the move
+                        np.array([[4, 3], [4, 4], [3, 4]])   # Snake 2 body after the move
+                    ],
+                    'food_positions': np.array([[0, 0]]),
+                    'snake_health': np.array([99, 99])
+                }
+            },
+            {
+                'name': 'Collision with food',
+                'initial_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([[2, 2], [1, 2], [0, 2]])
+                    ],
+                    'food_positions': np.array([[3, 2]]),
+                    'snake_health': np.array([100])
+                },
+                'moves': np.array([[1, 0]]),  # Snake moves right to eat food
+                'expected_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([[3, 2], [2, 2], [1, 2], [1, 2]])  # Snake has grown
+                    ],
+                    'food_positions': np.array([]),
+                    'snake_health': np.array([100])  # Health restored to 100
+                }
+            },
+            {
+                'name': 'Head-to-body collision',
+                'initial_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([[2, 2], [2, 3], [2, 4]]),  # Snake 1
+                        np.array([[3, 2], [3, 1], [3, 0]])   # Snake 2
+                    ],
+                    'food_positions': np.array([]),
+                    'snake_health': np.array([100, 100])
+                },
+                'moves': np.array([[0, -1], [-1, 0]]),  # Snake 1 moves up, Snake 2 moves left
+                'expected_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([[2, 1], [2, 2], [2, 3]]),  # Snake 1 survives
+                        np.array([]).reshape(0, 2)           # Snake 2 dies
+                    ],
+                    'food_positions': np.array([]),
+                    'snake_health': np.array([99, 0])  # Snake 1 loses 1 health, Snake 2 is dead
+                }
+            },
+            {
+                'name': 'Head-to-head collision, equal length',
+                'initial_state': {
+                    'board_size': (6, 6),
+                    'snake_bodies': [
+                        np.array([[2, 3], [2, 2]]),  # Snake 1
+                        np.array([[2, 4], [2, 5]])   # Snake 2
+                    ],
+                    'food_positions': np.array([]),
+                    'snake_health': np.array([100, 100])
+                },
+                'moves': np.array([[0, 1], [0, -1]]),  # Both snakes move into [2, 3]
+                'expected_state': {
+                    'board_size': (6, 6),
+                    'snake_bodies': [
+                        np.array([]).reshape(0, 2),  # No snake bodies left
+                        np.array([]).reshape(0, 2)
+                    ],
+                    'food_positions': np.array([]),
+                    'snake_health': np.array([0, 0])  # Both snakes are dead
+                }
+            },
             {
                 'name': 'Head-on collision, unequal lengths',
                 'initial_state': {
@@ -251,50 +251,130 @@ class TestGameState(unittest.TestCase):
                     'snake_health': np.array([0])  # Snake health is 0
                 }
             },
-            # {
-            #     'name': 'Snakes passing through each other (no collision)',
-            #     'initial_state': {
-            #         'board_size': (5, 5),
-            #         'snake_bodies': [
-            #             np.array([[1, 2], [0, 2]]),  # Snake 1
-            #             np.array([[2, 2], [3, 2]])   # Snake 2
-            #         ],
-            #         'food_positions': np.array([]),
-            #         'snake_health': np.array([100, 100])
-            #     },
-            #     'moves': np.array([[1, 0], [-1, 0]]),  # Snakes move into each other's bodies (but not heads)
-            #     'expected_state': {
-            #         'board_size': (5, 5),
-            #         'snake_bodies': [
-            #             np.array([[2, 2], [1, 2]]),  # Snake 1 moves down
-            #             np.array([[1, 2], [2, 2]])   # Snake 2 moves up
-            #         ],
-            #         'food_positions': np.array([]),
-            #         'snake_health': np.array([99, 99])  # Both lose 1 health
-            #     }
-            # },
-            # {
-            #     'name': 'Two snakes collide on the same food (same length, both die)',
-            #     'initial_state': {
-            #         'board_size': (7, 7),
-            #         'snake_bodies': [
-            #             np.array([[2, 2], [2, 1], [2, 0]]),  # Snake 1 (length 3)
-            #             np.array([[2, 4], [2, 5], [2, 6]])   # Snake 2 (length 3)
-            #         ],
-            #         'food_positions': np.array([[2, 3]]),   # Food placed at [2, 3]
-            #         'snake_health': np.array([100, 100])
-            #     },
-            #     'moves': np.array([[0, 1], [0, -1]]),  # Both snakes move towards [2, 3] where the food is located
-            #     'expected_state': {
-            #         'board_size': (7, 7),
-            #         'snake_bodies': [
-            #             np.array([]).reshape(0, 2),  # Snake 1 dies
-            #             np.array([]).reshape(0, 2)   # Snake 2 dies
-            #         ],
-            #         'food_positions': np.array([[2,3]]),  # Food is consumed
-            #         'snake_health': np.array([0, 0])  # Both snakes are dead
-            #     }
-            # }
+            {
+                'name': 'Two snakes collide on the same food (same length, both die)',
+                'initial_state': {
+                    'board_size': (7, 7),
+                    'snake_bodies': [
+                        np.array([[2, 2], [2, 1], [2, 0]]),  # Snake 1 (length 3)
+                        np.array([[2, 4], [2, 5], [2, 6]])   # Snake 2 (length 3)
+                    ],
+                    'food_positions': np.array([[2, 3]]),   # Food placed at [2, 3]
+                    'snake_health': np.array([100, 100])
+                },
+                'moves': np.array([[0, 1], [0, -1]]),  # Both snakes move towards [2, 3] where the food is located
+                'expected_state': {
+                    'board_size': (7, 7),
+                    'snake_bodies': [
+                        np.array([]).reshape(0, 2),  # Snake 1 dies
+                        np.array([]).reshape(0, 2)   # Snake 2 dies
+                    ],
+                    'food_positions': np.array([[2,3]]),  # Food is consumed
+                    'snake_health': np.array([0, 0])  # Both snakes are dead
+                }
+            },
+            {
+                'name': 'snake goes out of bounds',
+                'initial_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([[2, 2], [1, 2], [0, 2]]),  # Snake 1 body
+                        np.array([[4, 4], [3, 4], [2, 4]])   # Snake 2 body
+                    ],
+                    'food_positions': np.array([[0, 0]]),
+                    'snake_health': np.array([100, 100])
+                },
+                'moves': np.array([[1, 0], [1, 0]]),  # Snake 1 moves right, Snake 2 moves right
+                'expected_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([[3, 2], [2, 2], [1, 2]]),  # Snake 1 body after the move
+                        np.array([]).reshape(0, 2)   # Snake 2 dies
+                    ],
+                    'food_positions': np.array([[0, 0]]),
+                    'snake_health': np.array([99, 0])
+                }
+            },
+            {
+                'name': 'self collision kills via neck',
+                'initial_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([[2, 2], [1, 2], [0, 2]]),  # Snake 1 body
+                    ],
+                    'food_positions': np.array([[0, 0]]),
+                    'snake_health': np.array([100])
+                },
+                'moves': np.array([[-1, 0]]),  # Snake 1 moves left, colliding with itself; Snake 2 moves right
+                'expected_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([]).reshape(0, 2),  # Snake 1 dies due to self-collision
+                    ],
+                    'food_positions': np.array([[0, 0]]),
+                    'snake_health': np.array([0])  # Snake 1 dies; Snake 2 loses 1 health
+                }
+            },
+            {
+                'name': 'self collision kills via ass',
+                'initial_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([[2, 2], [1, 2], [0, 2],[0,1],[1,1],[2,1],[3,1]]),  # Snake 1 body
+                    ],
+                    'food_positions': np.array([[0, 0]]),
+                    'snake_health': np.array([100])
+                },
+                'moves': np.array([[0, -1]]),  # Snake 1 moves left, colliding with itself; Snake 2 moves right
+                'expected_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([]).reshape(0, 2),  # Snake 1 dies due to self-collision
+                    ],
+                    'food_positions': np.array([[0, 0]]),
+                    'snake_health': np.array([0])  # Snake 1 dies; Snake 2 loses 1 health
+                }
+            },
+            {
+                'name': 'tail disappears',
+                'initial_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([[2, 2], [1, 2], [0, 2],[0,1],[1,1],[2,1]]),  # Snake 1 body
+                    ],
+                    'food_positions': np.array([[0, 0]]),
+                    'snake_health': np.array([100])
+                },
+                'moves': np.array([[0, -1]]),  # Snake 1 moves left, colliding with itself; Snake 2 moves right
+                'expected_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([[2,1],[2, 2], [1, 2], [0, 2],[0,1],[1,1]]),  # Snake 1 body
+                    ],
+                    'food_positions': np.array([[0, 0]]),
+                    'snake_health': np.array([99])  # Snake 1 dies; Snake 2 loses 1 health
+                }
+            },
+            {
+                'name': "tail doesn't disappear after food",
+                'initial_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([[2, 2], [1, 2], [0, 2],[0,1],[1,1],[2,1],[2,1]]),  # Snake 1 body
+                    ],
+                    'food_positions': np.array([[0, 0]]),
+                    'snake_health': np.array([100])
+                },
+                'moves': np.array([[0, -1]]),  # Snake 1 moves left, colliding with itself; Snake 2 moves right
+                'expected_state': {
+                    'board_size': (5, 5),
+                    'snake_bodies': [
+                        np.array([]).reshape(0, 2),  # Snake 1 dies due to self-collision
+                    ],
+                    'food_positions': np.array([[0, 0]]),
+                    'snake_health': np.array([0])  # Snake 1 dies; Snake 2 loses 1 health
+                }
+            },
         ]
 
         # Run each test case

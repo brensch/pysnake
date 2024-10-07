@@ -38,8 +38,12 @@ class GameState:
         # Decrease health by 1 for alive snakes
         self.snake_health[self.alive_snakes] -= 1
 
-        # Update alive snakes based on health
-        self.alive_snakes = np.logical_and(self.alive_snakes, self.snake_health > 0)
+        # Update alive snakes based on health and clear body if health is 0
+        for i in range(num_snakes):
+            if self.snake_health[i] <= 0:
+                self.alive_snakes[i] = False
+                self.snake_bodies[i] = np.array([], dtype=int).reshape(0, 2)  # Clear the body for dead snake
+                self.snake_health[i] = 0  # Ensure health is exactly 0
 
         # Prepare arrays for old heads, new heads, and new bodies
         old_heads = np.full((num_snakes, 2), -1, dtype=int)
@@ -60,7 +64,7 @@ class GameState:
             # Check if the new head is within bounds
             if not (0 <= new_head[0] < self.board_size[0]) or not (0 <= new_head[1] < self.board_size[1]):
                 self.alive_snakes[i] = False  # Snake is out of bounds
-                self.snake_bodies[i] = np.array([], dtype=int).reshape(0, 2)  # Clear the body for dead snake
+                new_bodies[i] = np.array([], dtype=int).reshape(0, 2)  # Clear the body for dead snake
                 self.snake_health[i] = 0  # Set health to 0
                 continue
 
@@ -68,6 +72,12 @@ class GameState:
 
             # Update the snake body by moving the head and removing the tail
             new_bodies[i] = np.vstack(([new_head], self.snake_bodies[i][:-1]))
+
+            # Check for self-collision (if the head hits any part of the body)
+            if np.any(np.all(new_bodies[i][1:] == new_head, axis=1)):
+                self.alive_snakes[i] = False  # Self-collision
+                new_bodies[i] = np.array([], dtype=int).reshape(0, 2)  # Clear the body for dead snake
+                self.snake_health[i] = 0  # Set health to 0
 
         # Detect head-to-head collisions first
         alive_indices = np.where(self.alive_snakes)[0]

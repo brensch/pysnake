@@ -30,10 +30,10 @@ else:
     print("Model loaded successfully.")
 
 # Training parameters
-num_iterations = 3  # Number of training iterations
-num_games_per_iteration = 10  # Games per iteration (set to 2 for testing)
-num_simulations = 1000  # simulations is basically the number of nodes
-batch_size = 20  # Batch size for training
+num_iterations = 1  # Number of training iterations
+num_games_per_iteration = 1  # Games per iteration (set to 2 for testing)
+num_simulations = 10  # simulations is basically the number of nodes
+batch_size = 2 # Batch size for training
 
 training_losses = []  # To store training losses for visualization
 

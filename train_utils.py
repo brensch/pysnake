@@ -130,7 +130,7 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
         print(f"  Total Nodes Visited: {sum(child.visit_count for child in root.children.values())}")
         print(f"  Average MCTS Depth: {avg_mcts_depth:.2f}")
         for joint_action, child in root.children.items():
-            print(f"  Action {joint_action}: Visits = {child.visit_count}, Value = {child.total_value / max(child.visit_count, 1):.4f}")
+            print(f"  Action {joint_action.tolist()}: Visits = {child.visit_count}, Value = {child.total_value / max(child.visit_count, 1):.4f}")
 
         # Apply the joint action
         moves = [ACTIONS[action_idx] for action_idx in best_joint_action_indices]

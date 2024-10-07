@@ -84,6 +84,7 @@ for iteration in range(num_iterations):
     if iteration > 0:
         print(f"Evaluating model at iteration {iteration + 1}")
         previous_model_file = get_model_path(iteration, num_snakes, (board_height, board_width))
+        print(f"playing against {previous_model_file}")
         previous_model = keras.models.load_model(previous_model_file)
         win_rate = evaluate_model(model, previous_model, num_evaluation_games, num_simulations, num_snakes)
         print(f"Win rate against previous model: {win_rate:.2%}")

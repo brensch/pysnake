@@ -291,7 +291,7 @@ from tensorflow import keras
 
 def save_model(model: keras.Model, iteration: int, num_snakes: int, board_size: Tuple[int, int]) -> None:
     """
-    Save the model and optimizer with the specified parameters embedded in the filename.
+    Save the model with the specified parameters embedded in the filename.
     """
     models_dir = 'models'
     if not os.path.exists(models_dir):
@@ -309,12 +309,12 @@ def save_model(model: keras.Model, iteration: int, num_snakes: int, board_size: 
 
     # Save the model with the unique filename
     model.save(unique_filename)
-
-    print(f"Model saved as {unique_filename} ")
+    print(f"Model saved as {unique_filename}")
 
 def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> keras.Model:
     """
-    Load the latest model and optimizer that match the specified num_snakes and board_size.
+    Load the latest model that matches the specified num_snakes and board_size.
+    Returns the model if a model is found, otherwise None.
     """
     models_dir = 'models'
     if not os.path.exists(models_dir):
@@ -332,7 +332,7 @@ def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> keras.Mod
 
     if not matching_files:
         print(f"No saved model found with num_snakes={num_snakes} and board_size={board_size}")
-        return None, None
+        return None
 
     # Sort the matching files by timestamp (descending order) and get the latest one
     latest_model_file = max(matching_files, key=os.path.getctime)
@@ -340,7 +340,7 @@ def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> keras.Mod
     # Load the latest matching model
     model = keras.models.load_model(latest_model_file)
     print(f"Loaded model from {latest_model_file}")
-    
+
     return model
 
 

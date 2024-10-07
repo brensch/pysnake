@@ -126,7 +126,7 @@ def expand_node(node: MCTSNode, model: tf.keras.Model, num_snakes: int) -> None:
         child_node.prior = joint_prior
         node.children[tuple(joint_action_indices)] = child_node
 
-def rollout(state: GameState, num_snakes: int, max_rollout_depth: int = 10) -> np.ndarray:
+def rollout(state: GameState, num_snakes: int, max_rollout_depth: int = 110) -> np.ndarray:
     """Performs a random rollout from the given state."""
     current_state = copy.deepcopy(state)
     for _ in range(max_rollout_depth):

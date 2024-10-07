@@ -137,6 +137,13 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
             # Format the values per snake
             values_str = ', '.join(f'Snake {i}: {value:.4f}' for i, value in enumerate(average_values))
             print(f"  Action {joint_action_list}: Visits = {child.visit_count}, Values = [{values_str}]")
+            
+            # Correctly apply the joint action to the temporary game state
+            temp_game = copy.deepcopy(game_state)
+            # Convert action indices to movement vectors
+            moves = [ACTIONS[action_idx] for action_idx in joint_action]
+            temp_game.apply_moves(np.array(moves))
+            temp_game.visualize_board_ascii()
 
         # Apply the joint action
         moves = [ACTIONS[action_idx] for action_idx in best_joint_action_indices]

@@ -93,12 +93,14 @@ def inference_server(request_queue, response_queue, model):
 
     print("\nInference server shutting down.")
 
-
 def self_play_game(args):
     """
     Plays a single game for self-play. This function runs in a separate process.
     """
     request_queue, response_queue, num_simulations, num_snakes, game_index = args
+
+    # Print game start message
+    print(f"Game {game_index} started. Process PID: {current_process().pid}")
 
     # Initialize game-specific variables
     game_states = []
@@ -175,7 +177,7 @@ def self_play_game(args):
         game_policies.append(target_policies)
 
         # Send inference request to get the value estimate
-        idx = current_process().pid  # Use process PID as unique identifier
+        idx = (current_process().pid, id(game_state))  # Use PID and game_state ID as unique identifier
         state_tensor = game_state.get_state_as_tensor()
         request_queue.put((idx, state_tensor))
         # Wait for the response
@@ -206,6 +208,9 @@ def self_play_game(args):
             # Assuming zero-sum game
             game_values = [rewards[i] for i in range(num_snakes)] * len(game_states)
 
+    # Print game finish message
+    print(f"Game {game_index} finished. Process PID: {current_process().pid}")
+
     # Prepare game data to return
     game_data = []
     for state_tensor, target_policies_per_state, value in zip(game_states,
@@ -214,6 +219,7 @@ def self_play_game(args):
         game_data.append((state_tensor, target_policies_per_state, value))
 
     return game_data
+
 
 def self_play(model, num_games, num_simulations, num_snakes):
     """

@@ -158,8 +158,8 @@ def evaluate_state(state: GameState, num_snakes: int) -> np.ndarray:
     alive_snakes_indices = [i for i, alive in enumerate(state.alive_snakes) if alive]
 
     if len(alive_snakes_indices) == 0:
-        # All snakes are dead; consider it a tie or zero reward
-        values[:] = 0.0
+        # All snakes are dead; consider it a tie, but we don't want to tie.
+        values[:] = -0.5
     elif len(alive_snakes_indices) == 1:
         # One snake remains; they win
         winner = alive_snakes_indices[0]

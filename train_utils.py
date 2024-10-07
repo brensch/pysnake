@@ -55,7 +55,16 @@ def inference_server(request_queue, response_queue, model):
     """
     Runs the inference server that listens for inference requests and returns predictions.
     """
+    import time
+    import sys
+
     print(f"Inference server started with PID: {os.getpid()}")
+
+    # Variables to track inference rate
+    inference_count = 0
+    start_time = time.time()
+    last_update_time = start_time
+
     while True:
         item = request_queue.get()
         if item is None:
@@ -65,7 +74,25 @@ def inference_server(request_queue, response_queue, model):
         # Perform inference
         outputs = model.predict(np.expand_dims(state_tensor, axis=0), verbose=0)
         response_queue.put((idx, outputs))
-    print("Inference server shutting down.")
+
+        # Update inference count
+        inference_count += 1
+
+        # Check if one second has passed since the last update
+        current_time = time.time()
+        if current_time - last_update_time >= 1.0:
+            # Calculate inferences per second
+            elapsed_time = current_time - start_time
+            inferences_per_second = inference_count / elapsed_time
+
+            # Print the rate, overwriting the previous line
+            print(f"\rInferences per second: {inferences_per_second:.2f}", end='', flush=True)
+
+            # Update last update time
+            last_update_time = current_time
+
+    print("\nInference server shutting down.")
+
 
 def self_play_game(args):
     """

@@ -7,8 +7,9 @@ from tensorflow.keras import layers
 import random
 from collections import deque
 import copy
-
+import time
 import matplotlib.pyplot as plt
+from tensorflow.keras.models import load_model
 
 # Import classes and functions
 from game_state import GameState
@@ -221,4 +222,25 @@ def train_model(model, optimizer, replay_buffer, batch_size, num_snakes):
 
     return total_loss.numpy(), policy_loss.numpy(), value_loss.numpy()
 
-# The main training loop can be included in your script or notebook
+def save_model(model, iteration):
+    # Generate a unique filename based on the iteration and current timestamp
+    unique_filename = f'model_iteration_{iteration}_{int(time.time())}.h5'
+    
+    # Save the model with the unique filename
+    model.save(unique_filename)
+    print(f"Model saved as {unique_filename}")
+    
+    # Also save the model as 'latest_model.h5'
+    model.save('latest_model.h5')
+    print("Model also saved as latest_model.h5")
+
+def load_latest_model():
+    try:
+        model = load_model('latest_model.h5')
+        print("Loaded model from latest_model.h5")
+        return model
+    except OSError:
+        print("No saved model found. Starting from scratch.")
+        return None
+
+

@@ -21,7 +21,7 @@ board_height, board_width = 11, 11
 num_snakes = 2  # Number of snakes
 num_iterations = 100  # Number of training iterations
 num_games_per_iteration = 10  # Games per iteration
-num_simulations = 1000  # MCTS simulations per move
+num_simulations = 10  # MCTS simulations per move
 batch_size = 20  # Batch size for training
 num_evaluation_games = 10  # Number of games for evaluation
 optimizer = keras.optimizers.Adam(learning_rate=0.001)
@@ -46,14 +46,14 @@ for iteration in range(num_iterations):
     replay_buffer, game_summaries = self_play(model, num_games_per_iteration,
                                               num_simulations, num_snakes)
 
-    # Summarize the games
-    for summary in game_summaries:
-        print(f"Game {summary['game_index']} summary:")
-        print(f"  Steps: {summary['step_count']}")
-        print(f"  Average MCTS Depth: {summary['avg_mcts_depth']:.2f}")
-        print(f"  Winner: {'Snake ' + str(summary['winner']) if summary['winner'] is not None else 'Draw'}")
-        # Visualize the game (optional)
-        # visualize_game(summary, num_snakes, (board_height, board_width))
+    # # Summarize the games
+    # for summary in game_summaries:
+    #     print(f"Game {summary['game_index']} summary:")
+    #     print(f"  Steps: {summary['step_count']}")
+    #     print(f"  Average MCTS Depth: {summary['avg_mcts_depth']:.2f}")
+    #     print(f"  Winner: {'Snake ' + str(summary['winner']) if summary['winner'] is not None else 'Draw'}")
+    #     # Visualize the game (optional)
+    #     # visualize_game(summary, num_snakes, (board_height, board_width))
 
     # Train the model
     num_samples = len(replay_buffer.buffer)

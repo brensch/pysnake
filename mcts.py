@@ -83,7 +83,7 @@ def expand_and_evaluate(node, model, num_snakes):
     state_tensor = np.expand_dims(state_tensor, axis=0)  # Add batch dimension
 
     # Get policy logits and value from the model
-    outputs = model.predict(state_tensor)
+    outputs = model.predict(state_tensor, verbose=0)
     policy_logits = outputs[:num_snakes]
     value = outputs[-1][0][0]  # Extract scalar value
 

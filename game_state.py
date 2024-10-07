@@ -1,16 +1,22 @@
-# game_state.py
-
 import numpy as np
 from typing import List, Tuple
+
+ACTIONS = {
+    0: np.array([0, 1]),   # Up
+    1: np.array([0, -1]),  # Down
+    2: np.array([-1, 0]),  # Left
+    3: np.array([1, 0])    # Right
+}
 
 class GameState:
     def __init__(self, board_size: Tuple[int, int], snake_bodies: List[np.ndarray], food_positions: List[np.ndarray]):
         self.board_size = board_size
         self.initial_num_snakes = len(snake_bodies)
-        
+        self.turn = 0  # Keep track of the turn number
+
         # Initialize snake bodies
         self.snake_bodies = [body.copy() for body in snake_bodies]
-        
+
         # Initialize food layer
         self.food_layer = np.zeros(board_size, dtype=int)
         for food in food_positions:
@@ -93,19 +99,14 @@ class GameState:
         for pos, snakes in head_positions.items():
             if len(snakes) > 1:
                 # Collision at the same position
+                max_length = max(len(new_bodies[i]) for i in snakes)
+                longest_snakes = [i for i in snakes if len(new_bodies[i]) == max_length]
                 for i in snakes:
-                    for j in snakes:
-                        if i >= j:
-                            continue  # Avoid duplicate checks
-                        length_i = len(new_bodies[i])
-                        length_j = len(new_bodies[j])
-                        if length_i > length_j:
-                            dead_snakes_due_to_h2h.add(j)
-                        elif length_j > length_i:
-                            dead_snakes_due_to_h2h.add(i)
-                        else:
-                            dead_snakes_due_to_h2h.add(i)
-                            dead_snakes_due_to_h2h.add(j)
+                    if i not in longest_snakes:
+                        dead_snakes_due_to_h2h.add(i)
+                if len(longest_snakes) > 1:
+                    # All snakes die if lengths are equal
+                    dead_snakes_due_to_h2h.update(longest_snakes)
 
         # Check for head-on collisions where snakes swap positions
         for idx_i in range(len(alive_indices)):
@@ -172,6 +173,40 @@ class GameState:
 
         # Re-initialize snake layers with updated bodies and health
         self.initialize_snakes()
+
+        self.turn += 1  # Increment the turn counter
+
+    def is_terminal(self) -> bool:
+        """Check if the game is over."""
+        return not any(self.alive_snakes) or sum(self.alive_snakes) == 1
+
+    def get_safe_actions(self, snake_index: int) -> List[int]:
+        """Get a list of safe actions for the given snake."""
+        safe_actions = []
+        if not self.alive_snakes[snake_index]:
+            return safe_actions
+
+        head = self.snake_bodies[snake_index][0]
+        for action_idx, move in ACTIONS.items():
+            new_head = head + move
+            # Check bounds
+            if not (0 <= new_head[0] < self.board_size[0]) or not (0 <= new_head[1] < self.board_size[1]):
+                continue  # Move is out of bounds
+            collision = False
+            # Check for collisions with any snake body
+            for body in self.snake_bodies:
+                if any((body == new_head).all(axis=1)):
+                    collision = True
+                    break
+            if not collision:
+                safe_actions.append(action_idx)
+        return safe_actions
+
+    def get_valid_actions(self, snake_index: int) -> List[int]:
+        """Get a list of valid actions (including potentially unsafe ones)."""
+        if not self.alive_snakes[snake_index]:
+            return []
+        return list(ACTIONS.keys())
 
     def get_state_as_tensor(self) -> np.ndarray:
         """Returns the game state as a stacked NumPy array suitable for input into TensorFlow."""

@@ -1,5 +1,3 @@
-# train_utils.py
-
 import os
 import time
 import numpy as np
@@ -19,8 +17,8 @@ class ReplayBuffer:
     def __init__(self):
         self.buffer: deque = deque(maxlen=10000)
 
-    def add(self, state_tensor: np.ndarray, target_policy: List[np.ndarray], target_value: float) -> None:
-        self.buffer.append((state_tensor, target_policy, target_value))
+    def add(self, state_tensor: np.ndarray, target_policies: List[np.ndarray], target_values: np.ndarray) -> None:
+        self.buffer.append((state_tensor, target_policies, target_values))
 
     def sample(self, batch_size: int) -> Tuple[np.ndarray, List[List[np.ndarray]], np.ndarray]:
         actual_batch_size = min(batch_size, len(self.buffer))
@@ -31,7 +29,7 @@ class ReplayBuffer:
 def create_model(board_height: int, board_width: int, num_snakes: int, num_actions: int) -> keras.Model:
     """
     Creates a neural network model that takes the game state as input
-    and outputs policy logits for each snake and a value estimate.
+    and outputs policy logits for each snake and a value estimate per snake.
     """
     input_shape = (board_height, board_width, num_snakes * 2 + 1)
     inputs = keras.Input(shape=input_shape)
@@ -47,10 +45,13 @@ def create_model(board_height: int, board_width: int, num_snakes: int, num_actio
         policy_logit = layers.Dense(num_actions)(x)
         policy_logits.append(policy_logit)
 
-    # Value Head
-    value = layers.Dense(1, activation='tanh')(x)
+    # Value Heads for each snake
+    values = []
+    for _ in range(num_snakes):
+        value = layers.Dense(1, activation='tanh')(x)
+        values.append(value)
 
-    model = keras.Model(inputs=inputs, outputs=policy_logits + [value])
+    model = keras.Model(inputs=inputs, outputs=policy_logits + values)
     return model
 
 def self_play(model: keras.Model, num_games: int, num_simulations: int, num_snakes: int) -> Tuple[ReplayBuffer, List[Dict]]:
@@ -72,7 +73,7 @@ def self_play(model: keras.Model, num_games: int, num_simulations: int, num_snak
 
     return replay_buffer, game_summaries
 
-def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, game_index: int) -> Tuple[List[Tuple[np.ndarray, List[np.ndarray], float]], Dict]:
+def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, game_index: int) -> Tuple[List[Tuple[np.ndarray, List[np.ndarray], np.ndarray]], Dict]:
     """
     Plays a single game for self-play.
     """
@@ -81,7 +82,7 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
     # Initialize game-specific variables
     game_states: List[np.ndarray] = []
     game_policies: List[List[np.ndarray]] = []
-    game_values: List[float] = []
+    game_values: List[np.ndarray] = []
     game_moves: List[Tuple[int, ...]] = []  # To store moves for visualization
     game_state_objects: List[GameState] = []  # To store GameState objects for visualization
     mcts_depths: List[float] = []  # To store the depth of MCTS trees
@@ -117,8 +118,6 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
     while not game_over:
         # Store the current game state
         game_state_objects.append(copy.deepcopy(game_state))
-
-        print(game_state.visualize_board_ascii())
 
         # Run MCTS to get the best joint action and collect MCTS depth
         root = MCTSNode(copy.deepcopy(game_state))
@@ -163,36 +162,34 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
             target_policies.append(target_policy)
         game_policies.append(target_policies)
 
-        # Get the value from the model for training
+        # Get the value estimates from the model for training
         outputs = model.predict(np.expand_dims(state_tensor, axis=0), verbose=0)
-        value = outputs[-1][0][0]  # Scalar value
-        game_values.append(value)
+        value_estimates = np.array([output[0][0] for output in outputs[num_snakes:]])  # Extract values per snake
+        game_values.append(value_estimates)
 
         # Check if the game is over
-        if not any(game_state.alive_snakes):
+        if game_state.is_terminal():
             game_over = True
-            rewards = [-1] * num_snakes  # All snakes lost
-        elif sum(game_state.alive_snakes) == 1:
-            game_over = True
-            winning_snake = np.argmax(game_state.alive_snakes)
-            rewards = [-1] * num_snakes
-            rewards[winning_snake] = 1  # Winning snake gets +1 reward
-        else:
-            rewards = [0] * num_snakes  # Game continues
+            alive_snakes_indices = [i for i, alive in enumerate(game_state.alive_snakes) if alive]
+            if len(alive_snakes_indices) == 1:
+                winning_snake = alive_snakes_indices[0]
+            else:
+                winning_snake = None
 
-        # Assign rewards if the game is over
-        if game_over:
-            # Assuming zero-sum game
-            game_values = [rewards[i] for i in range(num_snakes)] * len(game_states)
+            # Assign rewards
+            rewards = np.array([-1.0] * num_snakes)
+            if winning_snake is not None:
+                rewards[winning_snake] = 1.0
+            game_values = [rewards for _ in range(len(game_states))]  # List of rewards per state
 
         step_count += 1
 
     # Prepare game data to return
     game_data = []
-    for state_tensor, target_policies_per_state, value in zip(game_states,
-                                                              game_policies,
-                                                              game_values):
-        game_data.append((state_tensor, target_policies_per_state, value))
+    for state_tensor, target_policies_per_state, values in zip(game_states,
+                                                               game_policies,
+                                                               game_values):
+        game_data.append((state_tensor, target_policies_per_state, values))
 
     # Calculate average MCTS depth
     avg_game_mcts_depth = sum(mcts_depths) / len(mcts_depths) if mcts_depths else 0
@@ -216,22 +213,24 @@ def train_model(model: keras.Model, optimizer: keras.optimizers.Optimizer, repla
 
     # Initialize lists for each snake
     target_policies_per_snake = [[] for _ in range(num_snakes)]
+    target_values_per_snake = [[] for _ in range(num_snakes)]
 
     # Iterate over the batch
-    for policy_list in target_policies:
+    for policy_list, value_array in zip(target_policies, target_values):
         for i in range(num_snakes):
             policy = policy_list[i]
             policy = policy.reshape(NUM_ACTIONS)
             target_policies_per_snake[i].append(policy)
+            target_values_per_snake[i].append(value_array[i])
 
-    # Stack policies for each snake
-    target_policies_stacked = [np.stack(target_policies_per_snake[i], axis=0)
-                               .astype(np.float32) for i in range(num_snakes)]
+    # Stack policies and values for each snake
+    target_policies_stacked = [np.stack(target_policies_per_snake[i], axis=0).astype(np.float32) for i in range(num_snakes)]
+    target_values_stacked = [np.array(target_values_per_snake[i]).astype(np.float32) for i in range(num_snakes)]
 
     with tf.GradientTape() as tape:
         outputs = model(state_tensors, training=True)
         policy_logits_list = outputs[:num_snakes]
-        values = outputs[-1]
+        value_preds_list = outputs[num_snakes:]
 
         # Compute policy loss for each snake
         policy_loss = 0.0
@@ -243,8 +242,12 @@ def train_model(model: keras.Model, optimizer: keras.optimizers.Optimizer, repla
                 tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
             )
 
-        # Compute value loss
-        value_loss = tf.reduce_mean(tf.square(target_values - tf.squeeze(values)))
+        # Compute value loss for each snake
+        value_loss = 0.0
+        for i in range(num_snakes):
+            preds = tf.squeeze(value_preds_list[i], axis=-1)
+            labels = target_values_stacked[i]
+            value_loss += tf.reduce_mean(tf.square(labels - preds))
 
         total_loss = policy_loss + value_loss
 
@@ -344,4 +347,4 @@ def visualize_game(summary: Dict, num_snakes: int, board_size: Tuple[int, int]) 
     for step_num, game_state in enumerate(game_states):
         print(f"Step {step_num + 1}:")
         game_state.visualize_board_ascii()
-        time.sleep(0.05)  # Pause for half a second between steps
+        time.sleep(0.05)  # Pause briefly between steps

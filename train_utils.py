@@ -344,4 +344,4 @@ def visualize_game(summary: Dict, num_snakes: int, board_size: Tuple[int, int]) 
     for step_num, game_state in enumerate(game_states):
         print(f"Step {step_num + 1}:")
         game_state.visualize_board_ascii()
-        time.sleep(0.5)  # Pause for half a second between steps
+        time.sleep(0.05)  # Pause for half a second between steps

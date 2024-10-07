@@ -31,8 +31,8 @@ else:
 
 # Training parameters
 num_iterations = 3  # Number of training iterations
-num_games_per_iteration = 2  # Games per iteration (set to 2 for testing)
-num_simulations = 10  # MCTS simulations per move (set to 10 for testing)
+num_games_per_iteration = 10  # Games per iteration (set to 2 for testing)
+num_simulations = 100  # MCTS simulations per move (set to 10 for testing)
 batch_size = 5  # Batch size for training
 
 training_losses = []  # To store training losses for visualization

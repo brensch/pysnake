@@ -1,3 +1,5 @@
+# train_utils.py
+
 import os
 import time
 import numpy as np
@@ -8,7 +10,6 @@ import random
 from collections import deque
 import copy
 from typing import List, Tuple, Dict
-import pickle
 from datetime import datetime
 
 # Import classes and functions
@@ -126,29 +127,7 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
         best_joint_action_indices, avg_mcts_depth = mcts_search(root, model, num_simulations, num_snakes)
         mcts_depths.append(avg_mcts_depth)
 
-        # # Print details about the current MCTS node statistics
-        # print(f"\nStep {step_count + 1}")
-        # print(f"  Total MCTS Simulations: {num_simulations}")
-        # print(f"  Total Nodes Visited: {sum(child.visit_count for child in root.children.values())}")
-        # print(f"  Average MCTS Depth: {avg_mcts_depth:.2f}")
-
-        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Step {step_count + 1} | Total MCTS Simulations: {num_simulations} | Total Nodes Visited: {sum(child.visit_count for child in root.children.values())} | Average MCTS Depth: {avg_mcts_depth:.2f}")
-
-        # for joint_action, child in root.children.items():
-        #     # Convert joint_action to a list for printing
-        #     joint_action_list = list(joint_action)
-        #     # Compute average values per snake
-        #     average_values = child.total_value / max(child.visit_count, 1)
-        #     # Format the values per snake
-        #     values_str = ', '.join(f'Snake {i}: {value:.4f}' for i, value in enumerate(average_values))
-        #     print(f"  Action {joint_action_list}: Visits = {child.visit_count}, Values = [{values_str}]")
-            
-            # # Correctly apply the joint action to the temporary game state
-            # temp_game = copy.deepcopy(game_state)
-            # # Convert action indices to movement vectors
-            # moves = [ACTIONS[action_idx] for action_idx in joint_action]
-            # temp_game.apply_moves(np.array(moves))
-            # temp_game.visualize_board_ascii()
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Step {step_count + 1} | Total MCTS Simulations: {num_simulations} | Average MCTS Depth: {avg_mcts_depth:.2f}")
 
         # Apply the joint action
         moves = [ACTIONS[action_idx] for action_idx in best_joint_action_indices]
@@ -161,12 +140,11 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
 
         # Compute target policies based on MCTS visit counts
         visit_counts_per_snake = [np.zeros(NUM_ACTIONS) for _ in range(num_snakes)]
-        total_visits = 0
+        total_visits = sum(child.visit_count for child in root.children.values())
 
         for child in root.children.values():
             joint_action = child.action  # Tuple of action indices per snake
             visit_count = child.visit_count
-            total_visits += visit_count
             for i in range(num_snakes):
                 visit_counts_per_snake[i][joint_action[i]] += visit_count
 
@@ -233,117 +211,6 @@ def self_play_game(model: keras.Model, num_simulations: int, num_snakes: int, ga
     print(f"Game {game_index} finished. Steps: {step_count}, Average MCTS Depth: {avg_game_mcts_depth:.2f}. Winner: {winning_snake}")
 
     return game_data, game_summary
-
-def train_model(model: keras.Model, optimizer: keras.optimizers.Optimizer, replay_buffer: ReplayBuffer, batch_size: int, num_snakes: int) -> Tuple[float, float, float]:
-    state_tensors, target_policies, target_values = replay_buffer.sample(batch_size)
-
-    # Initialize lists for each snake
-    target_policies_per_snake = [[] for _ in range(num_snakes)]
-    target_values_per_snake = [[] for _ in range(num_snakes)]
-
-    # Iterate over the batch
-    for policy_list, value_array in zip(target_policies, target_values):
-        for i in range(num_snakes):
-            policy = policy_list[i]
-            policy = policy.reshape(NUM_ACTIONS)
-            target_policies_per_snake[i].append(policy)
-            target_values_per_snake[i].append(value_array[i])
-
-    # Stack policies and values for each snake
-    target_policies_stacked = [np.stack(target_policies_per_snake[i], axis=0).astype(np.float32) for i in range(num_snakes)]
-    target_values_stacked = [np.array(target_values_per_snake[i]).astype(np.float32) for i in range(num_snakes)]
-
-    with tf.GradientTape() as tape:
-        outputs = model(state_tensors, training=True)
-        policy_logits_list = outputs[:num_snakes]
-        value_preds_list = outputs[num_snakes:]
-
-        # Compute policy loss for each snake
-        policy_loss = 0.0
-        for i in range(num_snakes):
-            logits = policy_logits_list[i]
-            labels = target_policies_stacked[i]
-
-            policy_loss += tf.reduce_mean(
-                tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
-            )
-
-        # Compute value loss for each snake
-        value_loss = 0.0
-        for i in range(num_snakes):
-            preds = tf.squeeze(value_preds_list[i], axis=-1)
-            labels = target_values_stacked[i]
-            value_loss += tf.reduce_mean(tf.square(labels - preds))
-
-        total_loss = policy_loss + value_loss
-
-    gradients = tape.gradient(total_loss, model.trainable_variables)
-    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-
-    return total_loss.numpy(), policy_loss.numpy(), value_loss.numpy()
-
-import os
-import time
-import pickle
-import glob
-from typing import Tuple
-from tensorflow import keras
-
-def save_model(model: keras.Model, iteration: int, num_snakes: int, board_size: Tuple[int, int]) -> None:
-    """
-    Save the model with the specified parameters embedded in the filename.
-    """
-    models_dir = 'models'
-    if not os.path.exists(models_dir):
-        os.makedirs(models_dir)
-
-    # Convert the board size to a string format like '11x11'
-    board_size_str = f'{board_size[0]}x{board_size[1]}'
-
-    # Generate a unique filename with iteration, num_snakes, board_size, and timestamp
-    unique_filename = os.path.join(
-        models_dir,
-        f'model_iteration_{iteration}_snakes_{num_snakes}_board_{board_size_str}_'
-        f'{int(time.time())}.keras'
-    )
-
-    # Save the model with the unique filename
-    model.save(unique_filename)
-    print(f"Model saved as {unique_filename}")
-
-def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> keras.Model:
-    """
-    Load the latest model that matches the specified num_snakes and board_size.
-    Returns the model if a model is found, otherwise None.
-    """
-    models_dir = 'models'
-    if not os.path.exists(models_dir):
-        os.makedirs(models_dir)
-
-    # Convert the board size to a string format like '11x11'
-    board_size_str = f'{board_size[0]}x{board_size[1]}'
-
-    # Find all model files that match the specified parameters
-    search_pattern = os.path.join(
-        models_dir,
-        f'model_iteration_*_snakes_{num_snakes}_board_{board_size_str}_*.keras'
-    )
-    matching_files = glob.glob(search_pattern)
-
-    if not matching_files:
-        print(f"No saved model found with num_snakes={num_snakes} and board_size={board_size}")
-        return None
-
-    # Sort the matching files by timestamp (descending order) and get the latest one
-    latest_model_file = max(matching_files, key=os.path.getctime)
-
-    # Load the latest matching model
-    model = keras.models.load_model(latest_model_file)
-    print(f"Loaded model from {latest_model_file}")
-
-    return model
-
-
 
 def generate_snake_start_positions(num_snakes: int, board_size: Tuple[int, int]) -> Tuple[List[Tuple[int, int]], List[np.ndarray]]:
     positions: List[Tuple[int, int]] = []
@@ -510,3 +377,112 @@ def play_evaluation_game(current_model: keras.Model, previous_model: keras.Model
         return 'previous'
     else:
         return 'draw'
+
+def train_model(model: keras.Model, optimizer: keras.optimizers.Optimizer, replay_buffer: ReplayBuffer, batch_size: int, num_snakes: int) -> Tuple[float, float, float]:
+    state_tensors, target_policies, target_values = replay_buffer.sample(batch_size)
+
+    # Initialize lists for each snake
+    target_policies_per_snake = [[] for _ in range(num_snakes)]
+    target_values_per_snake = [[] for _ in range(num_snakes)]
+
+    # Iterate over the batch
+    for policy_list, value_array in zip(target_policies, target_values):
+        for i in range(num_snakes):
+            policy = policy_list[i]
+            policy = policy.reshape(NUM_ACTIONS)
+            target_policies_per_snake[i].append(policy)
+            target_values_per_snake[i].append(value_array[i])
+
+    # Stack policies and values for each snake
+    target_policies_stacked = [np.stack(target_policies_per_snake[i], axis=0).astype(np.float32) for i in range(num_snakes)]
+    target_values_stacked = [np.array(target_values_per_snake[i]).astype(np.float32) for i in range(num_snakes)]
+
+    with tf.GradientTape() as tape:
+        outputs = model(state_tensors, training=True)
+        policy_logits_list = outputs[:num_snakes]
+        value_preds_list = outputs[num_snakes:]
+
+        # Compute policy loss for each snake
+        policy_loss = 0.0
+        for i in range(num_snakes):
+            logits = policy_logits_list[i]
+            labels = target_policies_stacked[i]
+
+            policy_loss += tf.reduce_mean(
+                tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
+            )
+
+        # Compute value loss for each snake
+        value_loss = 0.0
+        for i in range(num_snakes):
+            preds = tf.squeeze(value_preds_list[i], axis=-1)
+            labels = target_values_stacked[i]
+            value_loss += tf.reduce_mean(tf.square(labels - preds))
+
+        total_loss = policy_loss + value_loss
+
+    gradients = tape.gradient(total_loss, model.trainable_variables)
+    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+
+    return total_loss.numpy(), policy_loss.numpy(), value_loss.numpy()
+
+import os
+import time
+import pickle
+import glob
+from typing import Tuple
+from tensorflow import keras
+
+def save_model(model: keras.Model, iteration: int, num_snakes: int, board_size: Tuple[int, int]) -> None:
+    """
+    Save the model with the specified parameters embedded in the filename.
+    """
+    models_dir = 'models'
+    if not os.path.exists(models_dir):
+        os.makedirs(models_dir)
+
+    # Convert the board size to a string format like '11x11'
+    board_size_str = f'{board_size[0]}x{board_size[1]}'
+
+    # Generate a unique filename with iteration, num_snakes, board_size, and timestamp
+    unique_filename = os.path.join(
+        models_dir,
+        f'model_iteration_{iteration}_snakes_{num_snakes}_board_{board_size_str}_'
+        f'{int(time.time())}.keras'
+    )
+
+    # Save the model with the unique filename
+    model.save(unique_filename)
+    print(f"Model saved as {unique_filename}")
+
+def load_latest_model(num_snakes: int, board_size: Tuple[int, int]) -> keras.Model:
+    """
+    Load the latest model that matches the specified num_snakes and board_size.
+    Returns the model if a model is found, otherwise None.
+    """
+    models_dir = 'models'
+    if not os.path.exists(models_dir):
+        os.makedirs(models_dir)
+
+    # Convert the board size to a string format like '11x11'
+    board_size_str = f'{board_size[0]}x{board_size[1]}'
+
+    # Find all model files that match the specified parameters
+    search_pattern = os.path.join(
+        models_dir,
+        f'model_iteration_*_snakes_{num_snakes}_board_{board_size_str}_*.keras'
+    )
+    matching_files = glob.glob(search_pattern)
+
+    if not matching_files:
+        print(f"No saved model found with num_snakes={num_snakes} and board_size={board_size}")
+        return None
+
+    # Sort the matching files by timestamp (descending order) and get the latest one
+    latest_model_file = max(matching_files, key=os.path.getctime)
+
+    # Load the latest matching model
+    model = keras.models.load_model(latest_model_file)
+    print(f"Loaded model from {latest_model_file}")
+
+    return model

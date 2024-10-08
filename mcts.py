@@ -1,8 +1,11 @@
+# mcts.py
+
 import numpy as np
 import tensorflow as tf
 import copy
 import random
-from typing import Tuple, List
+from typing import Tuple, List, Dict
+from collections import deque
 
 from game_state import GameState, ACTIONS
 
@@ -13,16 +16,19 @@ class MCTSNode:
         self.state: GameState = state  # GameState object
         self.parent: 'MCTSNode' = parent
         self.action: Tuple[int, ...] = action  # The joint action that led to this node
-        self.children: dict = {}  # key: joint action tuple, value: MCTSNode
+        self.children: Dict[Tuple[int, ...], 'MCTSNode'] = {}  # key: joint action tuple, value: MCTSNode
         self.visit_count: int = 0
         self.total_value: np.ndarray = np.zeros(state.initial_num_snakes)  # Array per snake
         self.prior: float = 0.0  # For multi-agent, can use product of priors
+        self.is_expanded_flag: bool = False  # Flag to check if node is expanded
+        self.value_estimate: np.ndarray = None  # Value estimate for backpropagation
 
     def is_expanded(self) -> bool:
-        return len(self.children) > 0
+        return self.is_expanded_flag
 
 def mcts_search(root: MCTSNode, model: tf.keras.Model, num_simulations: int, num_snakes: int) -> Tuple[Tuple[int, ...], float]:
     total_depth: int = 0  # To calculate average depth
+
     for _ in range(num_simulations):
         node = root
         search_path: List[MCTSNode] = [node]
@@ -32,11 +38,17 @@ def mcts_search(root: MCTSNode, model: tf.keras.Model, num_simulations: int, num
             node = select_child(node, num_snakes)
             search_path.append(node)
 
-        # Expansion and Evaluation
-        value = expand_and_evaluate(node, model, num_snakes)
+        # At this point, node is either terminal or needs expansion
+        if not node.state.is_terminal():
+            # Add node to batch for expansion
+            batch_expand_and_evaluate([node], model, num_snakes)
+        else:
+            # Terminal node: evaluate the state directly and set value_estimate
+            node.value_estimate = evaluate_state(node.state, num_snakes)
+            node.is_expanded_flag = True  # Mark as expanded
 
         # Backpropagation
-        backpropagate(search_path, value)
+        backpropagate(search_path, node.value_estimate)
 
         # Update total depth
         total_depth += len(search_path)
@@ -77,22 +89,24 @@ def select_child(node: MCTSNode, num_snakes: int) -> MCTSNode:
 
     return best_child
 
-def expand_and_evaluate(node: MCTSNode, model: tf.keras.Model, num_snakes: int) -> np.ndarray:
-    """Expands the node and evaluates it using the neural network or game outcome if terminal."""
-    if node.state.is_terminal():
-        # Terminal node: evaluate the state directly
-        values = evaluate_state(node.state, num_snakes)
-        return values
-    else:
-        state_tensor = node.state.get_state_as_tensor()
-        outputs = model.predict(np.expand_dims(state_tensor, axis=0), verbose=0)
+def batch_expand_and_evaluate(nodes: List[MCTSNode], model: tf.keras.Model, num_snakes: int) -> None:
+    """Expands and evaluates a batch of nodes using the neural network."""
+    state_tensors = np.stack([node.state.get_state_as_tensor() for node in nodes], axis=0)
+    outputs = model.predict(state_tensors, verbose=0)
 
+    # Split outputs into policy logits and value estimates
+    policy_logits_list = outputs[:num_snakes]
+    value_estimates_list = outputs[num_snakes:]
+
+    # Process each node
+    for idx, node in enumerate(nodes):
         # Extract the value estimates for each snake
-        values = np.array([output[0][0] for output in outputs[num_snakes:]])  # Values per snake
+        values = np.array([value_estimates_list[i][idx][0] for i in range(num_snakes)])  # Values per snake
+        node.value_estimate = values  # Store value estimate for backpropagation
 
         # Convert logits to probabilities
-        policy_logits = outputs[:num_snakes]
-        policy_probs = [tf.nn.softmax(logits[0]).numpy() for logits in policy_logits]
+        policy_logits = [policy_logits_list[i][idx] for i in range(num_snakes)]
+        policy_probs = [tf.nn.softmax(logits).numpy() for logits in policy_logits]
 
         # Generate possible actions for alive snakes
         alive_snakes_indices = [i for i, alive in enumerate(node.state.alive_snakes) if alive]
@@ -131,26 +145,7 @@ def expand_and_evaluate(node: MCTSNode, model: tf.keras.Model, num_snakes: int) 
             child_node.prior = joint_prior
             node.children[tuple(joint_action_indices)] = child_node
 
-        return values  # Return the value estimates per snake
-
-def rollout(state: GameState, num_snakes: int, max_rollout_depth: int = 20) -> np.ndarray:
-    """Performs a random rollout from the given state."""
-    current_state = copy.deepcopy(state)
-    for _ in range(max_rollout_depth):
-        if current_state.is_terminal():
-            break
-        moves = []
-        for i in range(num_snakes):
-            if current_state.alive_snakes[i]:
-                # Get all possible actions
-                actions = list(ACTIONS.keys())
-                action_idx = random.choice(actions)
-                moves.append(ACTIONS[action_idx])
-            else:
-                moves.append(np.array([0, 0]))  # Dead snake doesn't move
-        current_state.apply_moves(np.array(moves))
-    # Evaluate the terminal state from each snake's perspective
-    return evaluate_state(current_state, num_snakes)
+        node.is_expanded_flag = True
 
 def evaluate_state(state: GameState, num_snakes: int) -> np.ndarray:
     """Returns an array of values for each snake based on the final state."""
@@ -177,5 +172,4 @@ def backpropagate(search_path: List[MCTSNode], value: np.ndarray) -> None:
     for node in reversed(search_path):
         node.visit_count += 1
         node.total_value += value  # value is an array per snake
-        # Do not invert the values, as we are not assuming a zero-sum game
         # Each snake's value is independent and should be propagated as is
